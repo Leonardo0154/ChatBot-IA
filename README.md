@@ -11,11 +11,11 @@ Asistente conversacional para niños con dificultades de comunicación, integran
 
 ##  Equipo
 - **PO**: Leonardo Gamboa
-- **Scrum Master**: [Por asignar]
+- **Scrum Master**: Enzo Medina
 - **Data Engineers**: Raul Gutierrez
-- **Data Scientists**: [Por asignar]
+- **Data Scientists**: Austin Flores y Jairo Huasaja
 - **Developers**: Sebastian Cuadrado
-- **UI/UX**: [Por asignar]
+- **UI/UX**: Piero COntreras
 - **QA**: Aaron Felices
 
 ##  Hitos
