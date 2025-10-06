@@ -14,6 +14,7 @@ Asistente conversacional para niños con dificultades de comunicación, integran
 - **Scrum Master**: Enzo Medina
 - **Data Engineers**: Raul Gutierrez
 - **Data Scientists**: Austin Flores y Jairo Huasaja
+- **Data Analyst**: Diego Flores
 - **Developers**: Sebastian Cuadrado
 - **UI/UX**: Piero COntreras
 - **QA**: Aaron Felices
