@@ -1,0 +1,16 @@
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Pytest cache
+.pytest_cache/
+
+# Logs
+data/logs/
+
+# User data
+data/users.json
+data/notes.json

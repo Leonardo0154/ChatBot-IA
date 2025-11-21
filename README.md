@@ -1,15 +1,22 @@
 # ChatBot-IA - Asistente con Pictogramas
 
 ##  Descripción
-Asistente conversacional para niños con dificultades de comunicación, integrando NLP y pictogramas. Proyecto del curso 1ASI0404 - Inteligencia Artificial 2025-20.
+Asistente conversacional para niños con dificultades de comunicación, integrando Natural Language Processing (NLP) y pictogramas. Este es un proyecto para el curso 1ASI0404 - Inteligencia Artificial 2025-20.
 
-##  Objetivos
-- Desarrollar modelo NLP para frases simples
-- Implementar módulo de pictogramas (texto ↔ imagen)
-- Crear interfaz gráfica accesible
-- Alineación con ODS 4, 9, 10
+## Documentación Completa
+Para obtener información detallada sobre la configuración del proyecto, la arquitectura, cómo ejecutar la aplicación y el progreso actual, por favor consulta la documentación principal en el siguiente enlace:
 
-##  Equipo
+### **[Ver Documentación Completa](../docs/README.md)**
+
+---
+
+###  Objetivos Generales
+- Desarrollar un modelo NLP para frases simples.
+- Implementar un módulo de pictogramas (texto ↔ imagen).
+- Crear una interfaz gráfica de usuario (GUI) accesible.
+- Alinear el proyecto con los Objetivos de Desarrollo Sostenible (ODS) 4, 9 y 10.
+
+###  Equipo
 - **PO**: Leonardo Gamboa
 - **Scrum Master**: Enzo Medina
 - **Data Engineers**: Raul Gutierrez
@@ -18,10 +25,3 @@ Asistente conversacional para niños con dificultades de comunicación, integran
 - **Developers**: Sebastian Cuadrado
 - **UI/UX**: Piero COntreras
 - **QA**: Aaron Felices
-
-##  Hitos
-- **Hito 1** (Sem 6): Dataset + Modelo Base
-- **Hito 2** (Sem 7): Prototipo Chatbot
-- **Hito 3** (Sem 12): GUI Integrada
-- **Hito 4** (Sem 15): Entrega Final
-

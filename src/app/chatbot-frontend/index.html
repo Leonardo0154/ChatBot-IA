@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatBot-IA Frontend</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="main-container">
+        <div class="chat-container">
+            <div class="header">
+                <h1>ChatBot-IA</h1>
+                <div class="nav-links">
+                    <a href="login.html" class="progress-link">Login</a>
+                    <a href="progress.html" class="progress-link" id="progress-link" style="display: none;">View Progress</a>
+                    <a href="notifications.html" class="progress-link" id="notifications-link" style="display: none;">Daily Summary</a>
+                    <a href="guided-session.html" class="progress-link" id="guided-session-link" style="display: none;">Guided Session</a>
+                    <a href="notes.html" class="progress-link" id="notes-link" style="display: none;">Shared Notes</a>
+                    <button id="logout-button" class="progress-link" style="display: none;">Logout</button>
+                </div>
+            </div>
+            <div class="chat-history" id="chat-history">
+                <!-- Chat messages and pictograms will be appended here -->
+            </div>
+            <div class="chat-input">
+                <input type="text" id="user-input" placeholder="Escribe tu mensaje...">
+                <button id="send-button">Enviar</button>
+                <button id="mic-button">🎤</button>
+            </div>
+        </div>
+
+        <div id="right-panel">
+            <div id="game-customization">
+                <h2>Customizar Juego</h2>
+                <select id="category-select">
+                    <option value="">Selecciona una categoría</option>
+                </select>
+                <button id="play-game-button">Jugar</button>
+            </div>
+            <div id="pictogram-gallery">
+                <h2>Galería de Pictogramas</h2>
+                <div id="pictogram-images">
+                    <!-- Pictograms will be loaded here dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jwt-decode@3.1.2/build/jwt-decode.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
