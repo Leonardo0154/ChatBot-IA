@@ -9,11 +9,4 @@ __pycache__/
 .pytest_cache/
 
 # Logs
-data/logs/
-
-# User data
-data/users.json
-data/notes.json
-
-
-data/raw/ARASAAC_ES.zip
+data/
