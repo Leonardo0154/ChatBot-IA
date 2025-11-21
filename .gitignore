@@ -14,3 +14,6 @@ data/logs/
 # User data
 data/users.json
 data/notes.json
+
+
+data/raw/ARASAAC_ES.zip
