@@ -8,18 +8,10 @@ __pycache__/
 # Pytest cache
 .pytest_cache/
 
-# Logs
-logs/
-
-# Data: evitar subir datasets y ficheros grandes
-/data/
-
-# Raw and processed data folders (si existen)
-data/raw/
-data/processed/
-
-# ARASAAC pictograms heavy folders
-data/raw/ARASAAC_ES/
+# Logs and sensitive data that should NOT be in the repo
+data/logs/
+data/users.json
+data/notes.json
 
 # Notebooks checkpoints and outputs
 .ipynb_checkpoints/
@@ -39,6 +31,9 @@ notebooks/.ipynb_checkpoints/
 
 # Large tools/binaries
 rclone-current-linux-amd64/
+rclone-current-linux-amd64.zip
+rclone-v1.66.0-linux-amd64.zip
+rclone_downloads.html
 
 # Env and IDE
 .env
