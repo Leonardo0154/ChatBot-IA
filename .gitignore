@@ -9,4 +9,42 @@ __pycache__/
 .pytest_cache/
 
 # Logs
-data/
+logs/
+
+# Data: evitar subir datasets y ficheros grandes
+/data/
+
+# Raw and processed data folders (si existen)
+data/raw/
+data/processed/
+
+# ARASAAC pictograms heavy folders
+data/raw/ARASAAC_ES/
+
+# Notebooks checkpoints and outputs
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# Model weights and common binary formats
+*.h5
+*.hdf5
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.tar.gz
+*.tar
+*.zip
+*.gz
+
+# Large tools/binaries
+rclone-current-linux-amd64/
+
+# Env and IDE
+.env
+.env*
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
