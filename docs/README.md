@@ -33,6 +33,7 @@ Este documento explica cómo configurar el proyecto `ChatBot-IA`, instalar depen
 
 **Step 5: Install Python Dependencies**
 - **Instalar:** `pip install -r requirements.txt`
+- **Nota:** La instalación de `torch` puede ser grande y tomar algo de tiempo.
 
 **Step 6: Download spaCy NLP Model**
 - **Comando:** `python -m spacy download es_core_news_sm`
@@ -55,6 +56,16 @@ Este documento explica cómo configurar el proyecto `ChatBot-IA`, instalar depen
         `curl -X POST "http://127.0.0.1:8000/users/" -H "Content-Type: application/json" -d '{"username": "parent1", "password": "password", "role": "parent", "students": ["student1"]}'`
     - **Therapist:**
         `curl -X POST "http://127.0.0.1:8000/users/" -H "Content-Type: application/json" -d '{"username": "therapist1", "password": "password", "role": "therapist", "students": ["student1"]}'`
+
+### Chatbot Architecture
+
+The chatbot uses a hybrid approach to generate intelligent and conversational responses.
+
+- **Pre-trained Language Model:** The core of the chatbot is a pre-trained T5 model (`mrm8488/spanish-t5-small-sqac-for-qa`) that has been fine-tuned for Spanish question answering. This model is used to generate text responses to user queries.
+
+- **"Smart" Pictogram Integration:** After the T5 model generates a response, the `spaCy` library is used to perform Natural Language Processing (NLP) on the text. The chatbot identifies the key concepts (nouns and verbs) in the response and replaces them with pictograms. This provides a rich and intuitive user experience that enhances understanding.
+
+- **Game and Session Logic:** The chatbot also includes logic for interactive games and guided sessions, which are managed within the `Chatbot` class.
 
 **Important Note on History Rewriting (`git lfs migrate`)**
  - **Advertencia:** Reescribir el historial (`git filter-repo`, `git lfs migrate`, BFG) cambia los commits existentes. Si lo aplicas, deberás forzar el push (`git push --force`) y avisar a colaboradores para que vuelvan a clonar.
