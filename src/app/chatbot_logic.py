@@ -7,29 +7,49 @@ import re
 # Load the spaCy model
 nlp = spacy.load("es_core_news_sm")
 
-# Simple game state
-game_state = {
-    "in_progress": False,
-    "correct_answer": None,
-    "pictogram_path": None,
-    "mode": None,  # "game" or "guided_session"
-    "guided_session_words": [],
-    "guided_session_step": 0
-}
+# Dictionary to hold game states for each user
+user_game_states = {}
 
-def start_game(category=None):
-    """Starts a new game by selecting a random pictogram, optionally from a specific category."""
-    global game_state
+def _get_default_game_state():
+    """Returns a new, default game state dictionary."""
+    return {
+        "in_progress": False,
+        "correct_answer": None,
+        "pictogram_path": None,
+        "mode": None,  # "game" or "guided_session"
+        "guided_session_words": [],
+        "guided_session_step": 0
+    }
+
+def _get_user_game_state(username: str):
+    """Retrieves or creates a game state for a given user."""
+    if username not in user_game_states:
+        user_game_states[username] = _get_default_game_state()
+    return user_game_states[username]
+
+def clear_user_game_state(username: str):
+    """Clears the game state for a specific user."""
+    if username in user_game_states:
+        del user_game_states[username]
+
+def start_game(username: str, category=None):
+    """Starts a new game for a specific user."""
+    game_state = _get_user_game_state(username)
     
     pictogram_pool = nlp_utils.pictograms
     
     if category:
-        pictogram_pool = [p for p in pictogram_pool if any(tag['schema_name'] == category for tag in p.get('tags', []))]
+        pictogram_pool = [p for p in pictogram_pool if category in p.get('tags', [])]
     
     if not pictogram_pool:
         return {"text": f"No pictograms found for category '{category}'.", "pictogram": None}
 
-    pictogram = random.choice([p for p in pictogram_pool if p.get('keywords')])
+    # Filter for pictograms that have keywords
+    valid_pictograms = [p for p in pictogram_pool if p.get('keywords')]
+    if not valid_pictograms:
+        return {"text": f"No usable pictograms with keywords found for category '{category}'.", "pictogram": None}
+
+    pictogram = random.choice(valid_pictograms)
     
     game_state["in_progress"] = True
     game_state["mode"] = "game"
@@ -41,35 +61,34 @@ def start_game(category=None):
         "pictogram": game_state["pictogram_path"]
     }
 
-def start_guided_session(words):
-    """Starts a guided session with a list of words."""
-    global game_state
+def start_guided_session(username: str, words: list):
+    """Starts a guided session for a specific user."""
+    game_state = _get_user_game_state(username)
     
     game_state["in_progress"] = True
     game_state["mode"] = "guided_session"
     game_state["guided_session_words"] = words
     game_state["guided_session_step"] = 0
     
-    # Set up the first word
     first_word = words[0]
     pictogram = nlp_utils.find_pictogram(first_word, nlp_utils.pictograms)
     game_state["correct_answer"] = first_word
     game_state["pictogram_path"] = pictogram['path'] if pictogram else None
 
-def process_sentence(sentence: str):
-    """Processes a sentence, handles game logic, and maps words to pictograms."""
-    global game_state
-    
+def process_sentence(username: str, sentence: str):
+    """Processes a sentence for a given user, handles game logic, and maps words to pictograms."""
+    game_state = _get_user_game_state(username)
     sentence_lower = sentence.lower()
 
     if game_state["in_progress"]:
         if game_state["mode"] == "game":
             if sentence_lower == game_state["correct_answer"].lower():
                 response_text = f"¡Correcto! La palabra es {game_state['correct_answer']}."
-                game_state["in_progress"] = False
+                clear_user_game_state(username) # Reset state after game ends
                 return [{'word': response_text, 'pictogram': None}]
             else:
-                return [{'word': "Inténtalo de nuevo.", 'pictogram': game_state["pictogram_path"]}]
+                clue = game_state["correct_answer"][0]
+                return [{'word': f"Inténtalo de nuevo. La palabra empieza por '{clue.upper()}'.", 'pictogram': game_state["pictogram_path"]}]
         
         elif game_state["mode"] == "guided_session":
             if sentence_lower == game_state["correct_answer"].lower():
@@ -81,38 +100,54 @@ def process_sentence(sentence: str):
                     game_state["pictogram_path"] = pictogram['path'] if pictogram else None
                     return [{'word': "¡Muy bien! Siguiente palabra...", 'pictogram': game_state["pictogram_path"]}]
                 else:
-                    game_state["in_progress"] = False
+                    clear_user_game_state(username) # Reset state after session ends
                     return [{'word': "¡Felicidades! Has completado la sesión.", 'pictogram': None}]
             else:
-                return [{'word': "Inténtalo de nuevo.", 'pictogram': game_state["pictogram_path"]}]
+                clue = game_state["correct_answer"][0]
+                return [{'word': f"Inténtalo de nuevo. La palabra empieza por '{clue.upper()}'.", 'pictogram': game_state["pictogram_path"]}]
 
-    # Check if the user wants to play a game
     game_match = re.match(r"jugar a (.+)", sentence_lower)
     if game_match:
-        category = game_match.group(1)
-        game_response = start_game(category)
+        category = game_match.group(1).strip()
+        game_response = start_game(username, category)
         return [{'word': game_response['text'], 'pictogram': game_response['pictogram']}]
-    elif any(word in sentence_lower for word in ["juego", "jugar", "juguemos"]):
-        game_response = start_game()
+    elif any(word in sentence_lower.split() for word in ["juego", "jugar", "juguemos"]):
+        game_response = start_game(username)
         return [{'word': game_response['text'], 'pictogram': game_response['pictogram']}]
 
-    # Original sentence processing
     processed_sentence = []
     doc = nlp(sentence)
     for token in doc:
+        # If the token is a verb, get its person and add the pronoun
         if token.pos_ == "VERB":
             morph = token.morph.to_dict()
             person = morph.get("Person")
-            if person == "1": pronoun = "yo"
-            elif person == "2": pronoun = "tú"
-            elif person == "3": pronoun = "él"
-            else: pronoun = None
+            if person == "1":
+                pronoun = "yo"
+            elif person == "2":
+                pronoun = "tú"
+            elif person == "3":
+                pronoun = "él" # or ella, or ello
+            else:
+                pronoun = None
+            
             if pronoun:
                 pictogram = nlp_utils.find_pictogram(pronoun, nlp_utils.pictograms)
-                processed_sentence.append({'word': pronoun, 'pictogram': pictogram['path'] if pictogram else None})
+                processed_sentence.append({
+                    'word': pronoun,
+                    'pictogram': pictogram['path'] if pictogram else None
+                })
+
             pictogram = nlp_utils.find_pictogram(token.lemma_, nlp_utils.pictograms)
-            processed_sentence.append({'word': token.lemma_, 'pictogram': pictogram['path'] if pictogram else None})
+            processed_sentence.append({
+                'word': token.lemma_,
+                'pictogram': pictogram['path'] if pictogram else None
+            })
+
         else:
             pictogram = nlp_utils.find_pictogram(token.text, nlp_utils.pictograms)
-            processed_sentence.append({'word': token.text, 'pictogram': pictogram['path'] if pictogram else None})
+            processed_sentence.append({
+                'word': token.text,
+                'pictogram': pictogram['path'] if pictogram else None
+            })
     return processed_sentence
