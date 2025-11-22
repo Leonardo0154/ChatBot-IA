@@ -115,11 +115,46 @@ class Chatbot:
                 game_response = self.start_game(username)
                 return [{'word': game_response['text'], 'pictogram': game_response['pictogram']}]
 
+            # Use spaCy to find the topic of the sentence
+            doc = nlp(sentence)
+            topic = ""
+            # Prioritize noun chunks as they often represent the main subject
+            noun_chunks = list(doc.noun_chunks)
+            if noun_chunks:
+                topic = noun_chunks[-1].text
+            else:
+                for token in doc:
+                    if token.pos_ == "NOUN":
+                        topic = token.text
+                        break
+            
+            context = ""
+            if topic:
+                try:
+                    import wikipedia
+                    wikipedia.set_lang("es")
+                    context = wikipedia.summary(topic, sentences=2)
+                except wikipedia.exceptions.PageError:
+                    context = ""
+                except wikipedia.exceptions.DisambiguationError as e:
+                    # If the topic is ambiguous, try the first option
+                    try:
+                        context = wikipedia.summary(e.options[0], sentences=2)
+                    except:
+                        context = ""
+
             # Use the T5 model to generate a response
-            input_text = f"question: {sentence}"
+            if context:
+                input_text = f"answer the question based on the context: question: {sentence} context: {context}"
+            else:
+                input_text = f"question: {sentence}"
+                
             inputs = self.tokenizer.encode(input_text, return_tensors="pt", max_length=512, truncation=True)
             outputs = self.model.generate(inputs, max_length=150, num_beams=4, early_stopping=True)
             response_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+            if len(response_text.split()) < 3:
+                return [{'word': "Sorry, I couldn't find a good answer to that.", 'pictogram': None}]
 
             # "Smart" pictogram integration
             processed_response = []
