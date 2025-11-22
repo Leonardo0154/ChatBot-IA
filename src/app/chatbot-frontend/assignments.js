@@ -2,9 +2,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const assignmentsList = document.getElementById('assignments-list');
     const API_BASE_URL = 'http://localhost:8000';
 
-    const AUTH_TOKEN = localStorage.getItem('accessToken');
-
     async function loadAssignments() {
+        const AUTH_TOKEN = localStorage.getItem('accessToken');
         if (!AUTH_TOKEN) {
             assignmentsList.innerHTML = '<p>You must be logged in to view assignments. <a href="login.html">Login here</a>.</p>';
             return;

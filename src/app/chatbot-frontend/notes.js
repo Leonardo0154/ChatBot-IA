@@ -4,10 +4,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const notesList = document.getElementById('notes-list');
     const API_BASE_URL = 'http://localhost:8000';
 
-    // IMPORTANT: In a real application, the token should be stored securely.
-    const AUTH_TOKEN = localStorage.getItem('accessToken');
-
     async function loadNotes() {
+        const AUTH_TOKEN = localStorage.getItem('accessToken');
         if (!AUTH_TOKEN) {
             notesList.innerHTML = '<p>You must be logged in to view and add notes. <a href="login.html">Login here</a>.</p>';
             return;
@@ -37,6 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     addNoteButton.addEventListener('click', async () => {
+        const AUTH_TOKEN = localStorage.getItem('accessToken');
         const text = noteText.value.trim();
         if (!text) return;
 

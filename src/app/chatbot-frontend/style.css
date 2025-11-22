@@ -44,6 +44,7 @@ h1 {
 .nav-links {
     display: flex;
     gap: 10px;
+    flex-wrap: wrap;
 }
 
 .progress-link {
