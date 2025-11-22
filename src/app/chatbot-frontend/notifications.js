@@ -3,11 +3,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const API_BASE_URL = 'http://localhost:8000';
 
     // IMPORTANT: In a real application, the token should be stored securely.
-    const AUTH_TOKEN = 'your_jwt_token_here'; 
+    const AUTH_TOKEN = localStorage.getItem('accessToken');
 
     async function loadNotifications() {
-        if (AUTH_TOKEN === 'your_jwt_token_here') {
-            notificationSummary.innerHTML = '<p>Please replace "your_jwt_token_here" with a valid token in notifications.js</p>';
+        if (!AUTH_TOKEN) {
+            notificationSummary.innerHTML = '<p>You must be logged in to view notifications. <a href="login.html">Login here</a>.</p>';
             return;
         }
 

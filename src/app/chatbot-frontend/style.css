@@ -120,6 +120,11 @@ h1 {
     background-color: #218838;
 }
 
+#mic-button.active {
+    background-color: #ff0000;
+    color: white;
+}
+
 #pictogram-images {
     display: flex;
     flex-wrap: wrap;
@@ -189,5 +194,13 @@ h1 {
 
 #progress-table tbody tr:hover {
     background-color: #ddd;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.visible {
+    display: inline-block !important;
 }
 

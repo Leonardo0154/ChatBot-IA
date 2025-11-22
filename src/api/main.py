@@ -40,6 +40,15 @@ class GuidedSessionWords(BaseModel):
 class Note(BaseModel):
     text: str
 
+class Assignment(BaseModel):
+    title: str
+    words: list[str]
+    task: str
+
+class AssignmentResult(BaseModel):
+    assignment_id: str
+    answers: list
+
 @app.get("/")
 async def read_root():
     return RedirectResponse(url="/static/index.html")
@@ -128,6 +137,28 @@ async def logout(current_user: schemas.User = Depends(auth.get_current_active_us
 async def create_note(note: Note, current_user: schemas.User = Depends(auth.get_current_active_user)):
     data_manager.save_note(current_user.username, note.text)
     return {"message": "Note saved successfully."}
+
+@app.post("/assignments")
+async def create_assignment(assignment: Assignment, current_user: schemas.User = Depends(auth.get_current_active_user)):
+    data_manager.save_assignment(current_user.username, assignment.dict())
+    return {"message": "Assignment saved successfully."}
+
+@app.get("/assignments")
+async def get_assignments(current_user: schemas.User = Depends(auth.get_current_active_user)):
+    return data_manager.get_assignments()
+
+@app.get("/assignment/{assignment_id}")
+async def get_assignment(assignment_id: str, current_user: schemas.User = Depends(auth.get_current_active_user)):
+    assignments = data_manager.get_assignments()
+    for assignment in assignments:
+        if assignment['timestamp'] == assignment_id:
+            return assignment
+    return {"error": "Assignment not found"}
+
+@app.post("/assignment-results")
+async def create_assignment_result(result: AssignmentResult, current_user: schemas.User = Depends(auth.get_current_active_user)):
+    data_manager.save_assignment_result(current_user.username, result.dict())
+    return {"message": "Assignment results saved successfully."}
 
 @app.get("/notes")
 async def get_notes(current_user: schemas.User = Depends(auth.get_current_active_user)):

@@ -4,6 +4,8 @@ from datetime import datetime
 
 LOG_FILE = 'data/logs/usage_logs.json'
 NOTES_FILE = 'data/notes.json'
+ASSIGNMENTS_FILE = 'data/assignments.json'
+ASSIGNMENT_RESULTS_FILE = 'data/assignment_results.json'
 
 def log_interaction(username, sentence, processed_sentence):
     """Logs the user's sentence and the processed pictograms to a JSON file."""
@@ -43,6 +45,52 @@ def save_note(author, text):
     with open(NOTES_FILE, 'w', encoding='utf-8') as f:
         json.dump(notes, f, ensure_ascii=False, indent=4)
 
+def get_assignments():
+    """Retrieves all assignments from the assignments file."""
+    if not os.path.exists(ASSIGNMENTS_FILE):
+        return []
+    with open(ASSIGNMENTS_FILE, 'r', encoding='utf-8') as f:
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            return []
+
+def save_assignment(author, assignment_data):
+    """Saves a new assignment to the assignments file."""
+    os.makedirs(os.path.dirname(ASSIGNMENTS_FILE), exist_ok=True)
+    assignments = get_assignments()
+    new_assignment = {
+        'timestamp': datetime.now().isoformat(),
+        'author': author,
+        **assignment_data
+    }
+    assignments.append(new_assignment)
+    with open(ASSIGNMENTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(assignments, f, ensure_ascii=False, indent=4)
+
+def get_assignment_results():
+    """Retrieves all assignment results from the results file."""
+    if not os.path.exists(ASSIGNMENT_RESULTS_FILE):
+        return []
+    with open(ASSIGNMENT_RESULTS_FILE, 'r', encoding='utf-8') as f:
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            return []
+
+def save_assignment_result(username, result_data):
+    """Saves a new assignment result to the results file."""
+    os.makedirs(os.path.dirname(ASSIGNMENT_RESULTS_FILE), exist_ok=True)
+    results = get_assignment_results()
+    new_result = {
+        'timestamp': datetime.now().isoformat(),
+        'username': username,
+        **result_data
+    }
+    results.append(new_result)
+    with open(ASSIGNMENT_RESULTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, indent=4)
+
 if __name__ == '__main__':
     # Example usage
     log_interaction("Hola", [{'word': 'Hola', 'pictogram': 'path/to/hola.png'}])
@@ -50,4 +98,3 @@ if __name__ == '__main__':
     print(f"Check the log file at: {LOG_FILE}")
     print(f"Check the notes file at: {NOTES_FILE}")
     print(get_notes())
-

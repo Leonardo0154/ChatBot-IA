@@ -18,7 +18,8 @@ def _get_default_game_state():
         "pictogram_path": None,
         "mode": None,  # "game" or "guided_session"
         "guided_session_words": [],
-        "guided_session_step": 0
+        "guided_session_step": 0,
+        "failures": 0
     }
 
 def _get_user_game_state(username: str):
@@ -80,6 +81,17 @@ def process_sentence(username: str, sentence: str):
     game_state = _get_user_game_state(username)
     sentence_lower = sentence.lower()
 
+    # Predefined conversational Q&A
+    qa_pairs = {
+        "what is your name?": "My name is ChatBot-IA.",
+        "how are you?": "I'm doing great, thanks for asking!",
+        "what can you do?": "I can help you communicate with pictograms, play games, and learn new things!",
+        "hello": "Hello there!",
+        "goodbye": "Goodbye! See you next time."
+    }
+    if sentence_lower in qa_pairs:
+        return [{'word': qa_pairs[sentence_lower], 'pictogram': None}]
+
     if game_state["in_progress"]:
         if game_state["mode"] == "game":
             if sentence_lower == game_state["correct_answer"].lower():
@@ -87,7 +99,8 @@ def process_sentence(username: str, sentence: str):
                 clear_user_game_state(username) # Reset state after game ends
                 return [{'word': response_text, 'pictogram': None}]
             else:
-                clue = game_state["correct_answer"][0]
+                game_state["failures"] += 1
+                clue = game_state["correct_answer"][:1 + game_state["failures"]]
                 return [{'word': f"Inténtalo de nuevo. La palabra empieza por '{clue.upper()}'.", 'pictogram': game_state["pictogram_path"]}]
         
         elif game_state["mode"] == "guided_session":
@@ -103,7 +116,8 @@ def process_sentence(username: str, sentence: str):
                     clear_user_game_state(username) # Reset state after session ends
                     return [{'word': "¡Felicidades! Has completado la sesión.", 'pictogram': None}]
             else:
-                clue = game_state["correct_answer"][0]
+                game_state["failures"] += 1
+                clue = game_state["correct_answer"][:1 + game_state["failures"]]
                 return [{'word': f"Inténtalo de nuevo. La palabra empieza por '{clue.upper()}'.", 'pictogram': game_state["pictogram_path"]}]
 
     game_match = re.match(r"jugar a (.+)", sentence_lower)

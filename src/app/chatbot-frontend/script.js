@@ -10,37 +10,71 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressLink = document.getElementById('progress-link');
     const notificationsLink = document.getElementById('notifications-link');
     const guidedSessionLink = document.getElementById('guided-session-link');
+    const assignmentsLink = document.getElementById('assignments-link');
+    const memoryGameLink = document.getElementById('memory-game-link');
     const notesLink = document.getElementById('notes-link');
+    const createAssignmentLink = document.getElementById('create-assignment-link');
+    const userInfo = document.getElementById('user-info');
     const loginLink = document.querySelector('a[href="login.html"]');
 
     const API_BASE_URL = 'http://localhost:8000';
 
     // --- Authentication Handling ---
     function handleAuth() {
+        // Explicitly hide all links first by adding 'hidden' class and removing 'visible'
+        [progressLink, notificationsLink, guidedSessionLink, assignmentsLink, memoryGameLink, notesLink, createAssignmentLink, logoutButton].forEach(el => {
+            if (el) {
+                el.classList.add('hidden');
+                el.classList.remove('visible');
+            }
+        });
+        if (loginLink) {
+            loginLink.classList.add('visible');
+            loginLink.classList.remove('hidden');
+        }
+
         const token = localStorage.getItem('accessToken');
         if (token) {
             try {
                 const decodedToken = jwt_decode(token);
                 const userRole = decodedToken.role;
+                const username = decodedToken.sub;
 
-                if(loginLink) loginLink.style.display = 'none';
-                if(logoutButton) logoutButton.style.display = 'inline-block';
+                if(userInfo) userInfo.textContent = `Logged in as: ${username}`;
+                if(loginLink) {
+                    loginLink.classList.add('hidden');
+                    loginLink.classList.remove('visible');
+                }
+                if(logoutButton) {
+                    logoutButton.classList.add('visible');
+                    logoutButton.classList.remove('hidden');
+                }
+
+                const showLinks = (links) => {
+                    links.forEach(link => {
+                        if (link) {
+                            link.classList.add('visible');
+                            link.classList.remove('hidden');
+                        }
+                    });
+                };
 
                 if (userRole === 'teacher' || userRole === 'parent') {
-                    if(progressLink) progressLink.style.display = 'inline-block';
-                    if(notificationsLink) notificationsLink.style.display = 'inline-block';
-                    if(notesLink) notesLink.style.display = 'inline-block';
+                    showLinks([progressLink, notificationsLink, notesLink, createAssignmentLink]);
                 }
                 if (userRole === 'therapist') {
-                    if(progressLink) progressLink.style.display = 'inline-block';
-                    if(notificationsLink) notificationsLink.style.display = 'inline-block';
-                    if(guidedSessionLink) guidedSessionLink.style.display = 'inline-block';
-                    if(notesLink) notesLink.style.display = 'inline-block';
+                    showLinks([progressLink, notificationsLink, guidedSessionLink, notesLink, createAssignmentLink]);
+                }
+                if (userRole === 'student' || userRole === 'child') {
+                    showLinks([notesLink, guidedSessionLink, assignmentsLink, memoryGameLink]);
                 }
             } catch (error) {
                 console.error('Error decoding token:', error);
                 localStorage.removeItem('accessToken');
+                if(userInfo) userInfo.textContent = '';
             }
+        } else {
+            if(userInfo) userInfo.textContent = '';
         }
     }
 
@@ -69,7 +103,46 @@ document.addEventListener('DOMContentLoaded', () => {
     let recognition;
     if (SpeechRecognition) {
         recognition = new SpeechRecognition();
-        // ... (rest of speech recognition setup as before)
+        recognition.lang = 'es-ES';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        let isRecognizing = false;
+
+        recognition.onstart = () => {
+            isRecognizing = true;
+            micButton.classList.add('active');
+            console.log('Speech recognition started');
+        };
+
+        recognition.onend = () => {
+            isRecognizing = false;
+            micButton.classList.remove('active');
+            console.log('Speech recognition ended');
+        };
+
+        recognition.onresult = (event) => {
+            const speechResult = event.results[0][0].transcript;
+            console.log('Confidence: ' + event.results[0][0].confidence);
+            console.log('Speech result: ' + speechResult);
+            sendMessage(speechResult);
+        };
+
+        recognition.onerror = (event) => {
+            console.error('Speech recognition error:', event.error);
+        };
+
+        micButton.addEventListener('click', () => {
+            if (isRecognizing) {
+                recognition.stop();
+            } else {
+                recognition.start();
+            }
+        });
+
+    } else {
+        console.warn('Speech Recognition not supported in this browser.');
+        if(micButton) micButton.style.display = 'none';
     }
 
     // --- API and UI Functions ---
