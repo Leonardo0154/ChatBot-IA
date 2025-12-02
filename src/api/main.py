@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
 from starlette.staticfiles import StaticFiles
 from starlette.responses import RedirectResponse, FileResponse
@@ -63,6 +63,9 @@ class PictogramPath(BaseModel):
 class GuidedSessionWords(BaseModel):
 
     words: list[str]
+    assignment_id: str | None = None
+    title: str | None = None
+    task: str | None = None
 
 
 
@@ -79,6 +82,7 @@ class Assignment(BaseModel):
     words: list[str]
 
     task: str
+    type: str = 'assignment'  # can be 'assignment' or 'guided_session'
 
 
 
@@ -154,7 +158,7 @@ async def get_pictogram(path: str):
 
 async def process_sentence_endpoint(sentence: Sentence, current_user: schemas.User = Depends(auth.get_current_active_user)):
 
-    chatbot_response = chatbot_logic.chatbot.process_sentence(current_user.username, sentence.text)
+    chatbot_response = chatbot_logic.chatbot.process_sentence(current_user.username, sentence.text, current_user.role)
 
     data_manager.log_interaction(current_user.username, sentence.text, chatbot_response)
 
@@ -242,7 +246,26 @@ async def get_progress(current_user: schemas.User = Depends(auth.get_current_act
 
 async def start_guided_session(session_words: GuidedSessionWords, current_user: schemas.User = Depends(auth.get_current_active_user)):
 
-    chatbot_logic.chatbot.start_guided_session(current_user.username, session_words.words)
+    assignment_meta = None
+    if session_words.assignment_id:
+        assignments = data_manager.get_assignments()
+        match = next((a for a in assignments if a.get('timestamp') == session_words.assignment_id), None)
+        if match:
+            assignment_meta = {
+                'type': match.get('type', 'guided_session'),
+                'task': match.get('task'),
+                'title': match.get('title'),
+                'target_words': match.get('words')
+            }
+    if not assignment_meta and (session_words.title or session_words.task):
+        assignment_meta = {
+            'type': 'guided_session',
+            'task': session_words.task,
+            'title': session_words.title,
+            'target_words': session_words.words
+        }
+
+    chatbot_logic.chatbot.start_guided_session(current_user.username, session_words.words, assignment_meta)
 
     return {"message": "Guided session started successfully."}
 
@@ -306,7 +329,19 @@ async def get_assignment(assignment_id: str, current_user: schemas.User = Depend
 
 async def create_assignment_result(result: AssignmentResult, current_user: schemas.User = Depends(auth.get_current_active_user)):
 
-    data_manager.save_assignment_result(current_user.username, result.dict())
+    if current_user.role not in ["student", "child"]:
+
+        raise HTTPException(status_code=403, detail="Only students can submit assignment results.")
+
+    assignments = data_manager.get_assignments()
+
+    matching_assignment = next((assignment for assignment in assignments if assignment.get('timestamp') == result.assignment_id), None)
+
+    if not matching_assignment:
+
+        raise HTTPException(status_code=404, detail="Assignment not found.")
+
+    data_manager.save_assignment_result(current_user.username, result.model_dump())
 
     return {"message": "Assignment results saved successfully."}
 

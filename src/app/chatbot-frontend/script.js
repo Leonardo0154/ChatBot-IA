@@ -59,14 +59,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 };
 
-                if (userRole === 'teacher' || userRole === 'parent') {
-                    showLinks([progressLink, notificationsLink, notesLink, createAssignmentLink]);
-                }
-                if (userRole === 'therapist') {
-                    showLinks([progressLink, notificationsLink, guidedSessionLink, notesLink, createAssignmentLink]);
-                }
-                if (userRole === 'student' || userRole === 'child') {
-                    showLinks([notesLink, guidedSessionLink, assignmentsLink, memoryGameLink]);
+                const roleLinkMap = {
+                    teacher: [progressLink, notificationsLink, guidedSessionLink, notesLink, createAssignmentLink, assignmentsLink],
+                    parent: [progressLink, notificationsLink, guidedSessionLink, notesLink],
+                    therapist: [progressLink, notificationsLink, guidedSessionLink, notesLink, createAssignmentLink],
+                    student: [notesLink, assignmentsLink, memoryGameLink],
+                    child: [notesLink, assignmentsLink, memoryGameLink]
+                };
+
+                if (roleLinkMap[userRole]) {
+                    showLinks(roleLinkMap[userRole]);
                 }
             } catch (error) {
                 console.error('Error decoding token:', error);

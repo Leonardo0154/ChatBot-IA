@@ -1,0 +1,114 @@
+{
+  "general": {
+    "prompt_prefix": "Eres un tutor de comunicación aumentativa que habla en español latino, usa frases cortas y cálidas.",
+    "fallback": "Estoy aquí para practicar tus palabras y pictogramas cuando lo necesites.",
+    "greetings": [
+      "¡Hola! Vamos a comunicarnos con pictogramas.",
+      "¡Qué alegría verte! Dí una palabra y la practicamos juntos."
+    ],
+    "greeting_triggers": ["hola", "buenos dias", "buenas tardes", "buenas noches"],
+    "encouragement": [
+      "Excelente esfuerzo, respira profundo y seguimos.",
+      "Cada pictograma que nombras te ayuda a expresar más cosas." 
+    ],
+    "context_hint": "Recuerda siempre usar las palabras que practicamos con tus pictogramas.",
+    "related_templates": [
+      "Cuando practicas {word}, también piensa en {associations}.",
+      "{word} se complementa con {associations}. ¡Dilos conmigo!"
+    ]
+  },
+  "assignment": {
+    "intro_templates": [
+      "Estamos trabajando en la actividad: {task}.",
+      "El objetivo de hoy es usar las palabras: {words}."
+    ],
+    "hint_templates": [
+      "Observa el pictograma de {word} y menciona para qué lo usas.",
+      "Piensa en una situación donde digas {word} y cuéntamela." 
+    ]
+  },
+  "guided_session": {
+    "intro": "Esta sesión guiada necesita practicar la palabra {word} con calma.",
+    "success": [
+      "¡Muy bien! Cambiemos a la siguiente tarjeta.",
+      "¡Excelente pronunciación! Seguimos con otra palabra." 
+    ],
+    "hint": "La palabra comienza con {clue}"
+  },
+  "related_vocab": {
+    "caballo": ["heno", "galopar", "herradura", "establo"],
+    "elefante": ["trompa", "manada", "agua"],
+    "rinoceronte": ["cuerno", "savana", "pesado"],
+    "sapo": ["charco", "verde", "croar"],
+    "ardilla": ["arbol", "nuez", "cola"],
+    "perro": ["correa", "ladrido", "pelota"],
+    "gato": ["maullar", "bigotes", "suave"],
+    "pajaro": ["alas", "volar", "nido"],
+    "pez": ["agua", "nadar", "pecera"],
+    "oso": ["invierno", "abrazo", "grande"],
+    "leon": ["melena", "selva", "rugido"],
+    "manzana": ["roja", "crujiente", "merienda", "jugo"],
+    "banana": ["amarilla", "dulce", "pelar"],
+    "pan": ["tostada", "mantequilla", "horno"],
+    "leche": ["vaso", "desayuno", "calcio"],
+    "agua": ["vaso", "sed", "fresca"],
+    "galleta": ["dulce", "caja", "merienda"],
+    "arroz": ["plato", "blanco", "cena"],
+    "sopa": ["caliente", "cuchara", "tazon"],
+    "pizza": ["queso", "rebanada", "horno"],
+    "audifonos": ["musica", "oidos", "escuchar"],
+    "telefono": ["llamada", "mensaje", "pantalla"],
+    "tablet": ["tocar", "aplicacion", "juego"],
+    "anillo": ["mano", "brilla", "regalo"],
+    "libro": ["leer", "paginas", "historia"],
+    "cuaderno": ["notas", "tareas", "lineas"],
+    "lapiz": ["escribir", "borrar", "afilado"],
+    "mochila": ["escuela", "cargar", "bolsillo"],
+    "pelota": ["rebotar", "juego", "cancha"],
+    "parque": ["columpio", "resbaladilla", "amigos"],
+    "casa": ["familia", "sala", "hogar"],
+    "escuela": ["maestra", "clase", "recreo"],
+    "hospital": ["doctor", "ambulancia", "cuidar"],
+    "ambulancia": ["sirena", "emergencia", "hospital"],
+    "autobus": ["ruta", "asientos", "chofer"],
+    "auto": ["ruedas", "cinturon", "viaje"],
+    "bicicleta": ["pedalear", "casco", "parque"],
+    "avion": ["alas", "nubes", "viajar"],
+    "tren": ["viaje", "vagon", "anden"],
+    "semaforo": ["luz", "cruzar", "seguridad"],
+    "pictograma": ["secuencia", "tablero", "expresar"],
+    "mama": ["abrazo", "cariño", "casa"],
+    "papa": ["fuerte", "guiar", "jugar"],
+    "hermano": ["compartir", "jugar", "familia"],
+    "hermana": ["risas", "apoyo", "familia"],
+    "abuelo": ["historias", "paciencia", "cafe"],
+    "abuela": ["cocina", "abrazo", "consejo"],
+    "amigo": ["juego", "confianza", "risas"],
+    "feliz": ["sonrisa", "abrazo", "cancion"],
+    "triste": ["llorar", "consuelo", "respirar"],
+    "enojado": ["respirar", "contar", "calma"],
+    "calmado": ["respirar", "susurro", "descanso"],
+    "miedo": ["apoyo", "mano", "luz"],
+    "cansado": ["descanso", "dormir", "silencio"],
+    "dormir": ["sabanas", "sueños", "noche"],
+    "comer": ["tenedor", "plato", "familia"],
+    "cepillar": ["dientes", "pasta", "bano"],
+    "banar": ["agua", "jabon", "toalla"],
+    "jugar": ["turnos", "reglas", "risas"],
+    "correr": ["rapido", "aire", "ejercicio"],
+    "saltar": ["trampolin", "piernas", "energia"],
+    "cantar": ["melodia", "voz", "ritmo"],
+    "bailar": ["musica", "pasos", "ritmo"],
+    "colores": ["rojo", "azul", "amarillo"],
+    "rojo": ["fuego", "corazon", "stop"],
+    "azul": ["cielo", "agua", "calma"],
+    "verde": ["hojas", "esperanza", "semaforo"],
+    "amarillo": ["sol", "sonrisa", "luz"],
+    "numero": ["contar", "sumar", "juego"],
+    "uno": ["primero", "dedo", "inicio"],
+    "dos": ["pareja", "ojos", "manos"],
+    "tres": ["pasos", "amigos", "trio"],
+    "rabano": ["huerto", "ensalada", "crujiente"],
+    "extraterrestre": ["planetas", "nave", "amistad"]
+  }
+}

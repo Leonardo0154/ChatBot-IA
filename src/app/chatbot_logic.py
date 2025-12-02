@@ -1,18 +1,22 @@
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from src.model import nlp_utils
+from src.app import data_manager
+from unidecode import unidecode
 import spacy
-import os
 import random
 import re
 
 # Load the spaCy model
 nlp = spacy.load("es_core_news_sm")
+DEFAULT_PROMPT_PREFIX = "Eres un tutor de comunicación aumentativa que responde en español claro y breve."
+DEFAULT_FALLBACK = "No encontré una respuesta específica, pero podemos seguir practicando tus pictogramas."
 
 class Chatbot:
     def __init__(self):
         self.tokenizer = AutoTokenizer.from_pretrained("mrm8488/spanish-t5-small-sqac-for-qa")
         self.model = AutoModelForSeq2SeqLM.from_pretrained("mrm8488/spanish-t5-small-sqac-for-qa")
         self.user_game_states = {}
+        self.support_content = data_manager.load_support_content()
 
     def _get_default_game_state(self):
         """Returns a new, default game state dictionary."""
@@ -23,7 +27,9 @@ class Chatbot:
             "mode": None,
             "guided_session_words": [],
             "guided_session_step": 0,
-            "failures": 0
+            "failures": 0,
+            "assignment_metadata": None,
+            "use_scripted": False
         }
 
     def _get_user_game_state(self, username: str):
@@ -31,6 +37,113 @@ class Chatbot:
         if username not in self.user_game_states:
             self.user_game_states[username] = self._get_default_game_state()
         return self.user_game_states[username]
+
+    def _wrap_text_with_pictograms(self, text: str, forced_pictogram: str | None = None):
+        doc = nlp(text)
+        response = []
+        for token in doc:
+            if not token.text.strip():
+                continue
+            pictogram_path = forced_pictogram
+            if forced_pictogram is None and token.pos_ in ["NOUN", "VERB"]:
+                pictogram = nlp_utils.find_pictogram(token.text, nlp_utils.pictograms)
+                pictogram_path = pictogram['path'] if pictogram else None
+            response.append({'word': token.text, 'pictogram': pictogram_path})
+        return response or [{'word': text, 'pictogram': forced_pictogram}]
+
+    def _single_entry_response(self, text: str, pictogram_path: str | None = None):
+        """Helper for deterministic responses without token splitting."""
+        return [{'word': text, 'pictogram': pictogram_path}]
+
+    def _build_progress_context(self, username: str):
+        summary = data_manager.get_user_progress_summary(username)
+        sections = []
+        if summary['total_interactions'] > 0:
+            sections.append(f"Ha practicado {summary['total_interactions']} veces con el asistente.")
+        if summary['most_common_words']:
+            word, freq = summary['most_common_words'][0]
+            sections.append(f"La palabra '{word}' apareció {freq} veces en sus ejercicios.")
+        if summary['last_interaction']:
+            sections.append(f"Última práctica registrada: {summary['last_interaction']}.")
+        return " ".join(sections).strip()
+
+    def _build_assignment_context(self, game_state: dict):
+        metadata = game_state.get('assignment_metadata') or {}
+        sections = []
+        assignment_support = self.support_content.get('assignment', {})
+        if metadata.get('task'):
+            template = random.choice(assignment_support.get('intro_templates', [])) if assignment_support.get('intro_templates') else None
+            text = template.format(task=metadata['task'], words=", ".join(metadata.get('target_words', []))) if template else f"Objetivo actual: {metadata['task']}."
+            sections.append(text)
+        elif metadata.get('target_words'):
+            sections.append(f"Objetivo actual: practicar {', '.join(metadata['target_words'])}.")
+        return " ".join(sections).strip()
+
+    def _compose_transformer_input(self, username: str, sentence: str, role: str):
+        game_state = self._get_user_game_state(username)
+        progress_text = self._build_progress_context(username)
+        assignment_text = self._build_assignment_context(game_state)
+        context_hint = self.support_content.get('general', {}).get('context_hint')
+        context_sections = [assignment_text, progress_text, context_hint]
+        context = " ".join([sec for sec in context_sections if sec])
+        prompt_prefix = self.support_content.get('general', {}).get('prompt_prefix', DEFAULT_PROMPT_PREFIX)
+        if context:
+            return f"{prompt_prefix} Contexto: {context} Pregunta: {sentence}"
+        return f"{prompt_prefix} Pregunta: {sentence}"
+
+    def _maybe_scripted_response(self, username: str, sentence_lower: str, role: str):
+        general_support = self.support_content.get('general', {})
+        for trigger in general_support.get('greeting_triggers', []):
+            if trigger in sentence_lower:
+                greeting = random.choice(general_support.get('greetings', [general_support.get('fallback', DEFAULT_FALLBACK)]))
+                return self._single_entry_response(greeting)
+
+        game_state = self._get_user_game_state(username)
+        metadata = game_state.get('assignment_metadata')
+        if metadata and role in ['child', 'student']:
+            assignment_support = self.support_content.get(metadata.get('type', 'assignment'), {})
+            template_list = assignment_support.get('intro_templates') or assignment_support.get('success')
+            if template_list:
+                text = random.choice(template_list)
+                words = metadata.get('target_words') or []
+                formatted = text.format(
+                    task=metadata.get('task', 'practicar palabras'),
+                    words=', '.join(words),
+                    word=words[0] if words else ''
+                )
+                pictogram_path = None
+                if words:
+                    pictogram = nlp_utils.find_pictogram(words[0], nlp_utils.pictograms)
+                    pictogram_path = pictogram['path'] if pictogram else None
+                return self._single_entry_response(formatted, pictogram_path)
+        return None
+
+    def _related_vocab_response(self, sentence: str):
+        """Returns a deterministic hint tying the word to related vocabulary."""
+        related_map = self.support_content.get('related_vocab', {})
+        if not related_map:
+            return None
+
+        general_support = self.support_content.get('general', {})
+        templates = general_support.get('related_templates', [])
+        fallback_template = "Cuando dices {word}, también recuerda {associations}."
+
+        tokens = re.findall(r"[\wáéíóúñü]+", sentence.lower())
+        for token in tokens:
+            normalized = unidecode(token)
+            associations = related_map.get(normalized)
+            pictogram = nlp_utils.find_pictogram(token, nlp_utils.pictograms)
+            if not associations and pictogram:
+                associations = [kw.get('keyword') for kw in pictogram.get('keywords', []) if kw.get('keyword') and kw.get('keyword').lower() != token]
+            if not associations:
+                continue
+
+            assoc_text = ", ".join(associations[:3])
+            template = random.choice(templates) if templates else fallback_template
+            text = template.format(word=token, associations=assoc_text)
+            pictogram_path = pictogram['path'] if pictogram else None
+            return self._single_entry_response(text, pictogram_path)
+        return None
 
     def clear_user_game_state(self, username: str):
         """Clears the game state for a specific user."""
@@ -53,31 +166,47 @@ class Chatbot:
         game_state["mode"] = "game"
         game_state["correct_answer"] = pictogram['keywords'][0]['keyword']
         game_state["pictogram_path"] = pictogram['path']
+        game_state["assignment_metadata"] = {
+            "type": "game",
+            "task": f"Adivinar palabras de la categoría {category or 'general'}",
+            "target_words": [game_state["correct_answer"]]
+        }
+        game_state["use_scripted"] = True
         return {
             "text": f"¡Adivina la palabra! (Categoría: {category or 'General'})",
             "pictogram": game_state["pictogram_path"]
         }
         
-    def start_guided_session(self, username: str, words: list):
+    def start_guided_session(self, username: str, words: list, metadata: dict | None = None):
         """Starts a guided session for a specific user."""
+        if not words:
+            return
+
         game_state = self._get_user_game_state(username)
-        
         game_state["in_progress"] = True
         game_state["mode"] = "guided_session"
         game_state["guided_session_words"] = words
         game_state["guided_session_step"] = 0
-        
+        game_state["assignment_metadata"] = {
+            "type": (metadata or {}).get('type', 'guided_session'),
+            "task": (metadata or {}).get('task', 'Sesión guiada de palabras'),
+            "title": (metadata or {}).get('title'),
+            "target_words": words
+        }
+        game_state["use_scripted"] = True
+
         first_word = words[0]
         pictogram = nlp_utils.find_pictogram(first_word, nlp_utils.pictograms)
         game_state["correct_answer"] = first_word
         game_state["pictogram_path"] = pictogram['path'] if pictogram else None
 
-    def process_sentence(self, username: str, sentence: str):
+    def process_sentence(self, username: str, sentence: str, role: str | None = None):
         """
         Processes a sentence for a given user, handles game logic, and generates a response.
         """
         game_state = self._get_user_game_state(username)
         sentence_lower = sentence.lower()
+        role = role or 'student'
 
         if game_state["in_progress"]:
             if game_state["mode"] == "game":
@@ -97,76 +226,50 @@ class Chatbot:
                         pictogram = nlp_utils.find_pictogram(next_word, nlp_utils.pictograms)
                         game_state["correct_answer"] = next_word
                         game_state["pictogram_path"] = pictogram['path'] if pictogram else None
-                        return [{'word': "¡Muy bien! Siguiente palabra...", 'pictogram': game_state["pictogram_path"]}]
+                        success_text = random.choice(self.support_content.get('guided_session', {}).get('success', ["¡Muy bien!"])).format(word=next_word)
+                        return self._single_entry_response(success_text, game_state["pictogram_path"])
                     else:
                         self.clear_user_game_state(username)
-                        return [{'word': "¡Felicidades! Has completado la sesión.", 'pictogram': None}]
+                        guided_success = self.support_content.get('guided_session', {}).get('success', [])
+                        farewell = random.choice(guided_success).format(word="") if guided_success else "¡Felicidades! Has completado la sesión."
+                        return self._single_entry_response(farewell)
                 else:
                     game_state["failures"] += 1
                     clue = game_state["correct_answer"][:1 + game_state["failures"]]
-                    return [{'word': f"Inténtalo de nuevo. La palabra empieza por '{clue.upper()}'.", 'pictogram': game_state["pictogram_path"]}]
+                    hint_template = self.support_content.get('guided_session', {}).get('hint', "La palabra comienza con {clue}")
+                    hint_text = hint_template.format(clue=clue.upper())
+                    return self._single_entry_response(hint_text, game_state["pictogram_path"])
         else:
             game_match = re.match(r"jugar a (.+)", sentence_lower)
             if game_match:
                 category = game_match.group(1).strip()
                 game_response = self.start_game(username, category)
-                return [{'word': game_response['text'], 'pictogram': game_response['pictogram']}]
+                return self._single_entry_response(game_response['text'], game_response['pictogram'])
             elif any(word in sentence_lower.split() for word in ["juego", "jugar", "juguemos"]):
                 game_response = self.start_game(username)
-                return [{'word': game_response['text'], 'pictogram': game_response['pictogram']}]
+                return self._single_entry_response(game_response['text'], game_response['pictogram'])
+            scripted = self._maybe_scripted_response(username, sentence_lower, role)
+            if scripted:
+                return scripted
 
-            # Use spaCy to find the topic of the sentence
-            doc = nlp(sentence)
-            topic = ""
-            # Prioritize noun chunks as they often represent the main subject
-            noun_chunks = list(doc.noun_chunks)
-            if noun_chunks:
-                topic = noun_chunks[-1].text
-            else:
-                for token in doc:
-                    if token.pos_ == "NOUN":
-                        topic = token.text
-                        break
-            
-            context = ""
-            if topic:
-                try:
-                    import wikipedia
-                    wikipedia.set_lang("es")
-                    context = wikipedia.summary(topic, sentences=2)
-                except wikipedia.exceptions.PageError:
-                    context = ""
-                except wikipedia.exceptions.DisambiguationError as e:
-                    # If the topic is ambiguous, try the first option
-                    try:
-                        context = wikipedia.summary(e.options[0], sentences=2)
-                    except:
-                        context = ""
+            related = self._related_vocab_response(sentence)
+            if related:
+                return related
 
-            # Use the T5 model to generate a response
-            if context:
-                input_text = f"answer the question based on the context: question: {sentence} context: {context}"
-            else:
-                input_text = f"question: {sentence}"
-                
-            inputs = self.tokenizer.encode(input_text, return_tensors="pt", max_length=512, truncation=True)
-            outputs = self.model.generate(inputs, max_length=150, num_beams=4, early_stopping=True)
-            response_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            input_text = self._compose_transformer_input(username, sentence, role)
+            try:
+                inputs = self.tokenizer.encode(input_text, return_tensors="pt", max_length=512, truncation=True)
+                outputs = self.model.generate(inputs, max_length=150, num_beams=4, early_stopping=True)
+                response_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            except Exception:
+                fallback_text = self.support_content.get('general', {}).get('fallback', DEFAULT_FALLBACK)
+                return self._wrap_text_with_pictograms(fallback_text)
 
             if len(response_text.split()) < 3:
-                return [{'word': "Sorry, I couldn't find a good answer to that.", 'pictogram': None}]
+                fallback_text = self.support_content.get('general', {}).get('fallback', DEFAULT_FALLBACK)
+                return self._wrap_text_with_pictograms(fallback_text)
 
-            # "Smart" pictogram integration
-            processed_response = []
-            doc = nlp(response_text)
-            for token in doc:
-                if token.pos_ in ["NOUN", "VERB"]:
-                    pictogram = nlp_utils.find_pictogram(token.text, nlp_utils.pictograms)
-                    processed_response.append({'word': token.text, 'pictogram': pictogram['path'] if pictogram else None})
-                else:
-                    processed_response.append({'word': token.text, 'pictogram': None})
-            
-            return processed_response
+            return self._wrap_text_with_pictograms(response_text)
 
 # Instantiate the chatbot
 chatbot = Chatbot()

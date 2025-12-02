@@ -6,6 +6,16 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.api.main import app
+from src.api import auth
+from src.security import schemas
+from src.app import data_manager
+
+
+def override_student_user():
+    return schemas.User(username="student1", role="student", students=["student1"])
+
+
+app.dependency_overrides[auth.get_current_active_user] = override_student_user
 
 client = TestClient(app)
 
@@ -40,3 +50,49 @@ def test_pictogram_to_text():
             data = response.json()
             assert "word" in data
             assert isinstance(data["word"], str)
+
+
+def test_assignment_results_reject_non_student(monkeypatch):
+    def override_teacher_user():
+        return schemas.User(username="teacher1", role="teacher", students=["student1"])
+
+    app.dependency_overrides[auth.get_current_active_user] = override_teacher_user
+
+    monkeypatch.setattr(data_manager, "get_assignments", lambda: [{"timestamp": "test-assignment"}])
+
+    response = client.post("/assignment-results", json={"assignment_id": "test-assignment", "answers": []})
+    assert response.status_code == 403
+
+    app.dependency_overrides[auth.get_current_active_user] = override_student_user
+
+
+def test_assignment_results_accepts_student(monkeypatch):
+    monkeypatch.setattr(
+        data_manager,
+        "get_assignments",
+        lambda: [{
+            "timestamp": "assignment-123",
+            "author": "teacher1",
+            "title": "Test",
+            "task": "Say the word",
+            "words": ["hola"],
+            "type": "assignment"
+        }]
+    )
+
+    saved_payload = {}
+
+    def fake_save(username, payload):
+        saved_payload["username"] = username
+        saved_payload["payload"] = payload
+
+    monkeypatch.setattr(data_manager, "save_assignment_result", fake_save)
+
+    response = client.post("/assignment-results", json={
+        "assignment_id": "assignment-123",
+        "answers": [{"word": "hola", "answer": "hola"}]
+    })
+
+    assert response.status_code == 200
+    assert saved_payload["username"] == "student1"
+    assert saved_payload["payload"]["assignment_id"] == "assignment-123"

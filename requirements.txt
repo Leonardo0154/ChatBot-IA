@@ -9,4 +9,3 @@ python-jose[cryptography]
 python-multipart
 transformers==4.57.1
 torch>=2.6
-wikipedia

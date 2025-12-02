@@ -1,5 +1,15 @@
+import os
+import warnings
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+os.environ.setdefault("PASSLIB_DISABLE_CRYPT_WARNING", "1")
+warnings.filterwarnings(
+    "ignore",
+    message="'crypt' is deprecated and slated for removal in Python 3.13",
+    category=DeprecationWarning,
+)
+
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from . import schemas

@@ -9,9 +9,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const API_BASE_URL = 'http://localhost:8000';
     const AUTH_TOKEN = localStorage.getItem('accessToken');
 
+    function parseJwt (token) {
+        try {
+            const base64Url = token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            return JSON.parse(jsonPayload);
+        } catch (e) {
+            return null;
+        }
+    }
+
     let currentWordIndex = 0;
     let assignment = null;
     let userAnswers = [];
+    const decoded = AUTH_TOKEN ? parseJwt(AUTH_TOKEN) : {};
+    const userRole = decoded ? decoded.role : null;
 
     const urlParams = new URLSearchParams(window.location.search);
     const assignmentId = urlParams.get('id');
@@ -35,7 +50,22 @@ document.addEventListener('DOMContentLoaded', () => {
             assignmentTitle.textContent = assignment.title;
             assignmentTask.textContent = assignment.task;
 
-            displayCurrentWord();
+            // If current user is a student/child they can start and answer the assignment.
+            // Otherwise show a read-only view (for teacher/parent/therapist) and hide interactive controls.
+            const canStart = (userRole === 'student' || userRole === 'child');
+
+            if (!canStart) {
+                // Hide interactive elements and show full word list
+                if (studentAnswer) studentAnswer.style.display = 'none';
+                if (submitAnswerButton) submitAnswerButton.style.display = 'none';
+                const wordsList = document.createElement('div');
+                wordsList.innerHTML = '<h4>Words in this assignment:</h4>' +
+                    '<ul>' + assignment.words.map(w => `<li>${w}</li>`).join('') + '</ul>';
+                assignmentWords.innerHTML = '';
+                assignmentWords.appendChild(wordsList);
+            } else {
+                displayCurrentWord();
+            }
 
         } catch (error) {
             console.error('Error loading assignment:', error);
