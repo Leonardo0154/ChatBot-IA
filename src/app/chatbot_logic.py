@@ -1,10 +1,11 @@
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-from src.model import nlp_utils
-from src.app import data_manager
+from src.model import nlp_utils, intent_classifier, emotion_classifier
+from src.app import data_manager, consent_manager
 from unidecode import unidecode
 import spacy
 import random
 import re
+from collections import Counter
 
 # Load the spaCy model
 nlp = spacy.load("es_core_news_sm")
@@ -16,6 +17,10 @@ class Chatbot:
         self.tokenizer = AutoTokenizer.from_pretrained("mrm8488/spanish-t5-small-sqac-for-qa")
         self.model = AutoModelForSeq2SeqLM.from_pretrained("mrm8488/spanish-t5-small-sqac-for-qa")
         self.user_game_states = {}
+        self.support_content = data_manager.load_support_content()
+
+    def reload_support_content(self):
+        """Reload support packs when teachers update curated content."""
         self.support_content = data_manager.load_support_content()
 
     def _get_default_game_state(self):
@@ -91,6 +96,13 @@ class Chatbot:
             return f"{prompt_prefix} Contexto: {context} Pregunta: {sentence}"
         return f"{prompt_prefix} Pregunta: {sentence}"
 
+    def _detect_intent_emotion(self, sentence: str):
+        if not sentence:
+            return ('otra_consulta', 0.0), ('neutral', 0.0)
+        intent = intent_classifier.predict_intent(sentence)
+        emotion = emotion_classifier.predict_emotion(sentence)
+        return intent, emotion
+
     def _maybe_scripted_response(self, username: str, sentence_lower: str, role: str):
         general_support = self.support_content.get('general', {})
         for trigger in general_support.get('greeting_triggers', []):
@@ -118,6 +130,82 @@ class Chatbot:
                 return self._single_entry_response(formatted, pictogram_path)
         return None
 
+    def _generate_dynamic_steps(self, scenario: dict, sentence: str, emotion_label: str):
+        prompt = (
+            "Eres un tutor AAC. "
+            f"Escenario: {scenario.get('id', 'rutina')}. "
+            f"Tono: {emotion_label}. "
+            "Genera exactamente tres pasos cortos en español para ayudar al niño. "
+            f"Consulta: {sentence}. "
+            "Separa los pasos con ' || '."
+        )
+        try:
+            inputs = self.tokenizer.encode(prompt, return_tensors="pt", max_length=256, truncation=True)
+            outputs = self.model.generate(inputs, max_length=150, num_beams=4, early_stopping=True)
+            decoded = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        except Exception:
+            return scenario.get('steps') or []
+        parts = [segment.strip(" -:\n") for segment in decoded.split('||') if segment.strip()]
+        return parts or scenario.get('steps') or []
+
+    def _summarize_recent_practice(self, username: str):
+        logs = data_manager.get_recent_interactions(username, limit=25)
+        if not logs:
+            return ""
+        words = []
+        for entry in logs:
+            for token in entry.get('processed_sentence', []):
+                word = (token or {}).get('word')
+                if not word:
+                    continue
+                cleaned = word.strip().lower()
+                if len(cleaned) <= 5 and cleaned.isalpha():
+                    words.append(cleaned)
+        if not words:
+            return ""
+        most_common = [w for w, _ in Counter(words).most_common(3)]
+        if not most_common:
+            return ""
+        formatted = ", ".join(most_common)
+        return f"Ya practicamos sonidos como: {formatted}."
+
+    def _scenario_template_response(self, username: str, sentence: str, sentence_lower: str, intent_label: str, emotion_label: str):
+        scenarios = self.support_content.get('scenarios', [])
+        if not isinstance(scenarios, list):
+            return None
+
+        for entry in scenarios:
+            triggers = entry.get('triggers') or []
+            intents = entry.get('intents') or []
+            matches_intent = intent_label in intents if intents else False
+            matches_trigger = any(trigger in sentence_lower for trigger in triggers if trigger)
+            if not (matches_intent or matches_trigger):
+                continue
+
+            steps = entry.get('steps') or []
+            if entry.get('dynamic_steps'):
+                steps = self._generate_dynamic_steps(entry, sentence, emotion_label)
+
+            text_parts = [entry.get('response')]
+            if entry.get('id') == 'terapia_practicar_sonido':
+                summary = self._summarize_recent_practice(username)
+                if summary:
+                    text_parts.append(summary)
+            if steps:
+                ordered = " ".join(f"{idx + 1}. {step}" for idx, step in enumerate(steps))
+                text_parts.append(ordered)
+            if entry.get('follow_up'):
+                text_parts.append(entry['follow_up'])
+            text = " ".join(part.strip() for part in text_parts if part).strip()
+            pictogram_path = None
+            keyword = entry.get('pictogram_keyword')
+            if keyword:
+                pictogram = nlp_utils.find_pictogram(keyword, nlp_utils.pictograms)
+                pictogram_path = pictogram['path'] if pictogram else None
+            if text:
+                return self._single_entry_response(text, pictogram_path)
+        return None
+
     def _related_vocab_response(self, sentence: str):
         """Returns a deterministic hint tying the word to related vocabulary."""
         related_map = self.support_content.get('related_vocab', {})
@@ -129,6 +217,9 @@ class Chatbot:
         fallback_template = "Cuando dices {word}, también recuerda {associations}."
 
         tokens = re.findall(r"[\wáéíóúñü]+", sentence.lower())
+        guessed = self._semantic_card_match(sentence.lower())
+        if guessed:
+            tokens.insert(0, guessed)
         for token in tokens:
             normalized = unidecode(token)
             associations = related_map.get(normalized)
@@ -144,6 +235,59 @@ class Chatbot:
             pictogram_path = pictogram['path'] if pictogram else None
             return self._single_entry_response(text, pictogram_path)
         return None
+
+    def _semantic_card_match(self, sentence_lower: str):
+        related_map = self.support_content.get('related_vocab', {})
+        if not related_map:
+            return None
+        tokens = set(re.findall(r"[\wáéíóúñü]+", sentence_lower))
+        tokens_unidecode = {unidecode(t) for t in tokens}
+        for main_word, associations in related_map.items():
+            for assoc in associations:
+                if unidecode(assoc.lower()) in tokens_unidecode:
+                    return main_word
+        return None
+
+    def _emotion_support_response(self, emotion_label: str):
+        responses = {
+            'triste': "Siento que estés triste. Respira conmigo y elige el pictograma de abrazo si quieres contarme más.",
+            'ansioso': "Cuando algo preocupa, respiramos lento y nombramos lo que vemos. Estoy contigo.",
+            'enojado': "Está bien estar enojado. Sacude tus manos y cuenta hasta cinco antes de seguir.",
+            'orgulloso': "¡Qué orgullo! Guarda ese sentimiento tocando el pictograma de trofeo.",
+            'calmo': "Qué bueno sentir calma. Podemos seguir a tu ritmo.",
+            'neutral': "Gracias por contarme. Seguimos juntos."
+        }
+        return self._single_entry_response(responses.get(emotion_label, responses['neutral']))
+
+    def _extract_permission_action(self, sentence_lower: str):
+        match = re.search(r"(?:puedo|me dejas|me permites|está bien si|esta bien si)(.+)", sentence_lower)
+        if not match:
+            return None
+        action = match.group(1).strip()
+        return action or None
+
+    def _consent_response(self, username: str, sentence: str, sentence_lower: str):
+        action = self._extract_permission_action(sentence_lower)
+        consent_manager.log_audit('chatbot_consent_request', username, metadata={'text': sentence})
+        if action:
+            text = f"Sí, avisemos a tu adulto. Puedes {action} y marca el pictograma de pausa cuando regreses."
+        else:
+            text = "Gracias por avisar. Anoto tu solicitud y esperamos confirmación del adulto."
+        return self._single_entry_response(text)
+
+    def _factual_response(self, sentence: str):
+        prompt = (
+            "Responde en español latino con máximo 25 palabras. "
+            "Da una explicación simple para niños y sugiere un pictograma si aplica. "
+            f"Pregunta: {sentence}"
+        )
+        try:
+            inputs = self.tokenizer.encode(prompt, return_tensors="pt", max_length=256, truncation=True)
+            outputs = self.model.generate(inputs, max_length=80, num_beams=4, early_stopping=True)
+            text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        except Exception:
+            text = self.support_content.get('general', {}).get('fallback', DEFAULT_FALLBACK)
+        return self._wrap_text_with_pictograms(text)
 
     def clear_user_game_state(self, username: str):
         """Clears the game state for a specific user."""
@@ -207,10 +351,15 @@ class Chatbot:
         game_state = self._get_user_game_state(username)
         sentence_lower = sentence.lower()
         role = role or 'student'
+        intent_info, emotion_info = self._detect_intent_emotion(sentence)
+        intent_label, _ = intent_info
+        emotion_label, _ = emotion_info
 
         if game_state["in_progress"]:
             if game_state["mode"] == "game":
-                if sentence_lower == game_state["correct_answer"].lower():
+                semantic_guess = self._semantic_card_match(sentence_lower)
+                correct = game_state["correct_answer"].lower()
+                if sentence_lower == correct or (semantic_guess and semantic_guess.lower() == correct):
                     response_text = f"¡Correcto! La palabra es {game_state['correct_answer']}."
                     self.clear_user_game_state(username)
                     return [{'word': response_text, 'pictogram': None}]
@@ -251,6 +400,26 @@ class Chatbot:
             scripted = self._maybe_scripted_response(username, sentence_lower, role)
             if scripted:
                 return scripted
+
+            scenario_match = self._scenario_template_response(username, sentence, sentence_lower, intent_label, emotion_label)
+            if scenario_match:
+                return scenario_match
+
+            if intent_label == 'juego_pista':
+                guess = self._semantic_card_match(sentence_lower)
+                if guess:
+                    pictogram = nlp_utils.find_pictogram(guess, nlp_utils.pictograms)
+                    text = f"Creo que piensas en {guess}. Busca ese pictograma y dime si coincide."
+                    return self._single_entry_response(text, pictogram['path'] if pictogram else None)
+
+            if intent_label == 'consentimiento':
+                return self._consent_response(username, sentence, sentence_lower)
+
+            if intent_label == 'emocional_checkin':
+                return self._emotion_support_response(emotion_label)
+
+            if intent_label == 'factual_pregunta':
+                return self._factual_response(sentence)
 
             related = self._related_vocab_response(sentence)
             if related:

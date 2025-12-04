@@ -9,3 +9,4 @@ python-jose[cryptography]
 python-multipart
 transformers==4.57.1
 torch>=2.6
+faster-whisper>=1.0.0

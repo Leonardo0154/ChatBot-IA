@@ -68,6 +68,62 @@ The chatbot uses a hybrid approach to generate intelligent and conversational re
 - **Word association cues:** The `related_vocab` section of `support_content.json` stores therapist-approved associations (e.g., `caballo` → “heno”, “herradura”). If a word is not present, `_related_vocab_response()` falls back to the extra keywords that come with the ARASAAC pictogram so single-word inputs still yield friendly hints instead of repeated tokens.
 - **Game and Session Logic:** The chatbot also includes logic for interactive games and guided sessions, which are managed within the `Chatbot` class. Guided sessions reuse the assignment infrastructure so therapists and parents can monitor progress without executing tasks themselves.
 
+### Backend TB2 Features
+
+### NLP contextual y dinámico
+- **Clasificador de intenciones (`src/model/intent_classifier.py`)**: modelo `textcat` de spaCy con diez etiquetas (rutina_escolar, terapia_habla, juego_cooperativo, factual_pregunta, consentimiento, etc.). Permite enrutar los escenarios correctos aunque la frase llegue parafraseada.
+- **Clasificador emocional (`src/model/emotion_classifier.py`)**: identifica si el niño está triste, ansioso, enojado, orgulloso, calmo o neutral. El tono alimenta las respuestas empáticas y los prompts de T5 cuando se generan pasos dinámicos.
+- **Plantillas dinámicas**: los escenarios marcados con `dynamic_steps` invocan el modelo T5 para producir tres pasos cortos con el tono detectado (“Escenario: autonomia_lavar_manos, tono: calmo…”). La estructura sigue siendo segura, pero el contenido se adapta a la consulta del niño.
+- **Resúmenes automáticos**: `data_manager.get_recent_interactions()` resume los pictogramas practicados y los incluye en sesiones de terapia del habla para cumplir con el requisito de “resumen + reformulación”.
+- **Extracción semántica en juegos**: `_semantic_card_match` recorre `related_vocab` para detectar palabras clave (melena → león, pedalear → bicicleta) incluso si el niño describe la carta sin decir su nombre.
+- **Consentimiento registrado**: cuando se detecta la intención `consentimiento`, `chatbot_logic` registra la solicitud en `data/logs/audit_logs.json` y personaliza la respuesta con la acción solicitada (“puedo descansar…”, “me dejas llamar…”).
+
+### Escenarios educativos y plantillas recomendadas
+Cada escenario se implementa como un `support_pack` diferente para que el equipo active o desactive contenidos sin reiniciar el backend. Se sugiere la siguiente estructura básica para cada plantilla dentro del pack:
+
+```json
+{
+    "id": "plantilla_id",
+    "trigger": "palabra_clave o intent",
+    "response": "Frase accesible con pictogramas {{picto}}",
+    "mode": "guided|free|game",
+    "emotion": "calm|excited|neutral"
+}
+```
+
+#### 1. Rutina escolar guiada
+- **Objetivo:** Preparar al estudiante para la jornada (antes, durante y después de clase) reforzando materiales, emociones y pasos esperados.
+- **Contenido sugerido:** saludos (“Buenos días, revisemos tu mochila”), listas cortas de tareas (“1. Guarda el cuaderno. 2. Lleva tus colores”), escalas emocionales con pictogramas simples.
+- **Triggers útiles:** `"trigger": "mochila"`, `"trigger": "como me siento"`, `"trigger": "lista de clase"`.
+- **KPIs asociados:** registro de asignaciones completadas y alertas de inactividad para detectar días sin rutina.
+- **NLP aplicado:** cuando el clasificador detecta `rutina_escolar`, T5 genera los pasos en tono `calmo` aunque el niño pregunte “¿qué debo llevar para ciencias?” sin mencionar “rutina”.
+
+#### 2. Sesiones de terapia del habla
+- **Objetivo:** Practicar fonemas y turn-taking con apoyo visual mientras se reduce la carga cognitiva.
+- **Contenido sugerido:** pasos “Respira profundo”, “Mira el pictograma de la boca abierta”, “Repite pa-pa-pa”, descansos programados (“Toma agua, avísame cuando quieras seguir”).
+- **Extras técnicos:** se pueden mezclar cues de audio para que el niño escuche el sonido objetivo y plantillas que recuerdan usar el micro para repetir.
+- **Registro:** usa `/shared-notes` para que terapeuta y familia documenten mejoras por sesión.
+- **NLP aplicado:** `_summarize_recent_practice` toma las últimas palabras pronunciadas desde `usage_logs.json` y el clasificador `terapia_habla` fuerza la regeneración dinámica de los pasos de práctica.
+
+#### 3. Juego cooperativo o familiar
+- **Objetivo:** Fomentar habilidades socioemocionales durante juegos como memoria, adivinanzas o historias compartidas.
+- **Contenido sugerido:** preguntas abiertas moderadas (“¿Qué harías si tu amigo está triste?”), recordatorios de turnos (“Ahora te toca mirar dos cartas”) y mensajes calmantes si hay frustración.
+- **Integración:** `mode="game"` ayuda a `chatbot_logic` a priorizar respuestas determinísticas antes del modelo T5.
+- **Alertas:** regla de vocabulario puede avisar cuando el niño desbloquea nuevas palabras del juego.
+- **NLP aplicado:** `_semantic_card_match` usa `related_vocab` para mapear descripciones (“tiene melena y ruge”) a un pictograma (`león`), permitiendo validar adivinanzas aunque la palabra no sea literal.
+
+#### 4. Autonomía diaria
+- **Objetivo:** Guiar actividades de vida diaria (higiene, alimentación, vestirse) entregando instrucciones paso a paso.
+- **Contenido sugerido:** plantillas secuenciales (“Abre el grifo”, “Frota tus manos”, “Seca con la toalla”), frases de refuerzo positivo y alternativas cuando falta un objeto (“Si no encuentras el cepillo azul, usa el verde y dime cómo se siente”).
+- **Vinculación con módulos:** combina reportes (para ver frecuencia de rutinas) con notificaciones (“alerta si pasan 3 días sin registrar higiene matutina”).
+- **NLP aplicado:** intención `autonomia_diaria` + clasificador emocional → los pasos dinámicos pueden sonar calmados, animados o de refuerzo dependiendo de lo que el niño exprese (“estoy nervioso”, “me siento orgulloso”).
+
+#### 5. Escenarios personalizados
+- **Cómo crearlos:** duplicar un pack existente via `POST /support-packs`, ajustar `triggers` y `response`, y activarlo con `POST /support-packs/{id}/activate`.
+- **Recomendación:** mantén comentarios (`notes`) dentro del JSON para documentar ante el equipo docente qué objetivo curricular cubre cada plantilla.
+
+Estos escenarios cumplen el objetivo analítico del proyecto (comprender lenguaje simple y asociarlo con pictogramas) mientras proveen rutas claras para la intervención pedagógica y terapéutica.
+
 **Important Note on History Rewriting (`git lfs migrate`)**
  - **Advertencia:** Reescribir el historial (`git filter-repo`, `git lfs migrate`, BFG) cambia los commits existentes. Si lo aplicas, deberás forzar el push (`git push --force`) y avisar a colaboradores para que vuelvan a clonar.
  - **Alternativa:** Si no quieres reescribir historia, considera mover archivos grandes fuera del repo (storage externo) o usar Git LFS antes de subir.

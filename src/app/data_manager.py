@@ -4,6 +4,8 @@ from datetime import datetime
 from collections import Counter
 import copy
 
+from src.app import support_pack_manager
+
 LOG_FILE = 'data/logs/usage_logs.json'
 NOTES_FILE = 'data/notes.json'
 ASSIGNMENTS_FILE = 'data/assignments.json'
@@ -121,7 +123,97 @@ DEFAULT_SUPPORT_CONTENT = {
         "tres": ["pasos", "amigos", "trio"],
         "rabano": ["huerto", "ensalada", "crujiente"],
         "extraterrestre": ["planetas", "nave", "amistad"]
-    }
+    },
+    "scenarios": [
+        {
+            "id": "rutina_salir_casa",
+            "intents": ["rutina_escolar"],
+            "triggers": [
+                "antes de salir",
+                "salir de casa",
+                "antes de ir a la escuela"
+            ],
+            "response": "Antes de salir de casa repasemos estos pasos:",
+            "steps": [
+                "Guarda cuadernos y estuche dentro de la mochila.",
+                "Coloca la botella de agua o lonchera en el bolsillo frontal.",
+                "Respira profundo y elige el pictograma que muestra cómo te sientes."
+            ],
+            "follow_up": "Cuando termines me cuentas y celebramos tu rutina.",
+            "pictogram_keyword": "mochila",
+            "dynamic_steps": True,
+            "tone": "calmo"
+        },
+        {
+            "id": "terapia_practicar_sonido",
+            "intents": ["terapia_habla"],
+            "triggers": [
+                "terapia del habla",
+                "practicar sonido",
+                "pronunciar",
+                "sonido dificil"
+            ],
+            "response": "Practiquemos el sonido con calma:",
+            "steps": [
+                "Inhala por la nariz y cuenta tres.",
+                "Mira el pictograma de la boca abierta para recordar la forma.",
+                "Di el sonido tres veces y aplaude cuando lo logres."
+            ],
+            "follow_up": "Si te cansas, toma agua y seguimos cuando digas.",
+            "pictogram_keyword": "hablar",
+            "dynamic_steps": True,
+            "tone": "calmo"
+        },
+        {
+            "id": "juego_cooperativo_memoria",
+            "intents": ["juego_cooperativo", "juego_pista"],
+            "triggers": [
+                "juego cooperativo",
+                "juego de memoria",
+                "jugar memoria"
+            ],
+            "response": "En el juego cooperativo recuerda:",
+            "steps": [
+                "Observa dos tarjetas y nombra lo que ves.",
+                "Espera tu turno diciendo 'ahora tú'.",
+                "Si te frustras, toca el pictograma de calma y respira."
+            ],
+            "follow_up": "Dime qué parejas encontraste para celebrarlo.",
+            "pictogram_keyword": "jugar",
+            "tone": "emocionado"
+        },
+        {
+            "id": "autonomia_lavar_manos",
+            "intents": ["autonomia_diaria"],
+            "triggers": [
+                "lavarme las manos",
+                "higiene",
+                "antes de comer"
+            ],
+            "response": "Lavemos las manos paso a paso:",
+            "steps": [
+                "Abre el grifo y moja las manos.",
+                "Frota con jabón contando hasta diez.",
+                "Enjuaga, seca y muestra el pictograma de manos limpias."
+            ],
+            "follow_up": "Cuando termines puedes elegir el pictograma de 'listo'.",
+            "pictogram_keyword": "agua",
+            "dynamic_steps": True,
+            "tone": "calmo"
+        },
+        {
+            "id": "concepto_color_cielo",
+            "intents": ["factual_pregunta"],
+            "triggers": [
+                "color es el cielo",
+                "color del cielo",
+                "cielo de que color"
+            ],
+            "response": "Durante el día el cielo casi siempre es azul clarito con nubes blancas.",
+            "follow_up": "Busca el pictograma de azul o de nube para mostrarlo.",
+            "pictogram_keyword": "azul"
+        }
+    ]
 }
 
 def log_interaction(username, sentence, processed_sentence):
@@ -138,6 +230,23 @@ def log_interaction(username, sentence, processed_sentence):
             f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
     except IOError as e:
         print(f"Error writing to log file: {e}")
+
+
+def get_recent_interactions(username: str, limit: int = 20):
+    if not os.path.exists(LOG_FILE):
+        return []
+    interactions = []
+    with open(LOG_FILE, 'r', encoding='utf-8') as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                log = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if log.get('username') == username:
+                interactions.append(log)
+    return interactions[-limit:]
 
 def get_notes():
     """Retrieves all notes from the notes file."""
@@ -211,23 +320,30 @@ def save_assignment_result(username, result_data):
 
 def load_support_content():
     """Loads curated therapist/teacher support content."""
-    if not os.path.exists(SUPPORT_CONTENT_FILE):
-        return DEFAULT_SUPPORT_CONTENT
+    support_data = copy.deepcopy(DEFAULT_SUPPORT_CONTENT)
 
-    try:
-        with open(SUPPORT_CONTENT_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            if isinstance(data, dict):
-                merged = copy.deepcopy(DEFAULT_SUPPORT_CONTENT)
-                for section, value in data.items():
-                    if isinstance(value, dict):
-                        merged.setdefault(section, {}).update(value)
-                    else:
-                        merged[section] = value
-                return merged
-    except (json.JSONDecodeError, IOError):
-        pass
-    return DEFAULT_SUPPORT_CONTENT
+    if os.path.exists(SUPPORT_CONTENT_FILE):
+        try:
+            with open(SUPPORT_CONTENT_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    for section, value in data.items():
+                        if isinstance(value, dict):
+                            support_data.setdefault(section, {}).update(value)
+                        else:
+                            support_data[section] = value
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    active_pack = support_pack_manager.get_active_content()
+    if isinstance(active_pack, dict):
+        for section, value in active_pack.items():
+            if isinstance(value, dict):
+                support_data.setdefault(section, {}).update(value)
+            else:
+                support_data[section] = value
+
+    return support_data
 
 
 def get_user_progress_summary(username):

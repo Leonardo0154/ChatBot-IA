@@ -110,5 +110,95 @@
     "tres": ["pasos", "amigos", "trio"],
     "rabano": ["huerto", "ensalada", "crujiente"],
     "extraterrestre": ["planetas", "nave", "amistad"]
-  }
+  },
+  "scenarios": [
+    {
+      "id": "rutina_salir_casa",
+      "intents": ["rutina_escolar"],
+      "triggers": [
+        "antes de salir",
+        "salir de casa",
+        "antes de ir a la escuela"
+      ],
+      "response": "Antes de salir de casa repasemos estos pasos:",
+      "steps": [
+        "Guarda cuadernos y estuche dentro de la mochila.",
+        "Coloca la botella de agua o lonchera en el bolsillo frontal.",
+        "Respira profundo y elige el pictograma que muestra cómo te sientes."
+      ],
+      "follow_up": "Cuando termines me cuentas y celebramos tu rutina.",
+      "pictogram_keyword": "mochila",
+      "dynamic_steps": true,
+      "tone": "calmo"
+    },
+    {
+      "id": "terapia_practicar_sonido",
+      "intents": ["terapia_habla"],
+      "triggers": [
+        "terapia del habla",
+        "practicar sonido",
+        "pronunciar",
+        "sonido dificil"
+      ],
+      "response": "Practiquemos el sonido con calma:",
+      "steps": [
+        "Inhala por la nariz y cuenta tres.",
+        "Mira el pictograma de la boca abierta para recordar la forma.",
+        "Di el sonido tres veces y aplaude cuando lo logres."
+      ],
+      "follow_up": "Si te cansas, toma agua y seguimos cuando digas.",
+      "pictogram_keyword": "hablar",
+      "dynamic_steps": true,
+      "tone": "calmo"
+    },
+    {
+      "id": "juego_cooperativo_memoria",
+      "intents": ["juego_cooperativo", "juego_pista"],
+      "triggers": [
+        "juego cooperativo",
+        "juego de memoria",
+        "jugar memoria"
+      ],
+      "response": "En el juego cooperativo recuerda:",
+      "steps": [
+        "Observa dos tarjetas y nombra lo que ves.",
+        "Espera tu turno diciendo 'ahora tú'.",
+        "Si te frustras, toca el pictograma de calma y respira."
+      ],
+      "follow_up": "Dime qué parejas encontraste para celebrarlo.",
+      "pictogram_keyword": "jugar",
+      "tone": "emocionado"
+    },
+    {
+      "id": "autonomia_lavar_manos",
+      "intents": ["autonomia_diaria"],
+      "triggers": [
+        "lavarme las manos",
+        "higiene",
+        "antes de comer"
+      ],
+      "response": "Lavemos las manos paso a paso:",
+      "steps": [
+        "Abre el grifo y moja las manos.",
+        "Frota con jabón contando hasta diez.",
+        "Enjuaga, seca y muestra el pictograma de manos limpias."
+      ],
+      "follow_up": "Cuando termines puedes elegir el pictograma de 'listo'.",
+      "pictogram_keyword": "agua",
+      "dynamic_steps": true,
+      "tone": "calmo"
+    },
+    {
+      "id": "concepto_color_cielo",
+      "intents": ["factual_pregunta"],
+      "triggers": [
+        "color es el cielo",
+        "color del cielo",
+        "cielo de que color"
+      ],
+      "response": "Durante el día el cielo casi siempre es azul clarito con nubes blancas.",
+      "follow_up": "Busca el pictograma de azul o de nube para mostrarlo.",
+      "pictogram_keyword": "azul"
+    }
+  ]
 }
