@@ -41,6 +41,16 @@ Para obtener información detallada sobre la configuración del proyecto, la arq
 - **Plantillas dinámicas con T5:** Cuando un escenario marca `dynamic_steps`, el modelo T5 rellena los “slots” de la plantilla (tres pasos, tono personalizado) a partir de la intención detectada y de lo expresado por el niño.
 - **Resúmenes y auditoría automática:** Los últimos pictogramas practicados se extraen de `usage_logs.json` para personalizar las sesiones de terapia y las solicitudes de permiso se registran en `data/logs/audit_logs.json` cuando el niño pide autorización.
 
+###  Frontend Vite Companion
+El folder `Frontend/chatbot-frontend` contiene la SPA en Vue 3/Vite que consume los endpoints FastAPI. Pasos sugeridos:
+1. `cd Frontend/chatbot-frontend` y `cp .env.example .env` (ajusta `VITE_API_BASE_URL` si la API corre en otro host/puerto).
+2. `npm install` y `npm run dev` para levantar la SPA (`npm run build` para producción).
+3. El formulario de registro golpea `POST /users/` (roles: child, parent, teacher, therapist). El login usa `POST /token` (OAuth2) y guarda el `access_token` en `localStorage`.
+4. La vista `ChatbotView` llama a `POST /process` con el token para mostrar las respuestas con pictogramas. Cualquier 401 limpia la sesión y redirige al login.
+5. El botón "Salir" ejecuta `POST /logout`, limpia el estado local y vuelve a `/login`.
+
+> Tras ejecutar `npm run build`, el backend monta automáticamente `Frontend/chatbot-frontend/dist` bajo `/static` y sirve la SPA en `http://localhost:8000/`, dejando el frontend "antiguo" solo como respaldo.
+
 ###  Escenarios educativos concretos
  - **Rutina escolar guiada:** Packs con saludos pre y post clase, recordatorios de materiales y escalas emocionales. El clasificador `rutina_escolar` permite que frases abiertas (“¿qué llevo hoy a lengua?”) disparen esta secuencia aún si no mencionan la palabra “rutina”.
  - **Sesiones de terapia del habla:** Plantillas por fonema o sonido conflictivo. El bot resume los sonidos practicados (extraídos de `usage_logs.json`) y, si la intención `terapia_habla` está presente, T5 regenera los tres pasos con el tono emocional detectado.

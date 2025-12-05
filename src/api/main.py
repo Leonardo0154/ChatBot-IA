@@ -1,13 +1,14 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from starlette.staticfiles import StaticFiles
-from starlette.responses import RedirectResponse, FileResponse
+from starlette.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import json
 import copy
 from datetime import datetime, date
 from collections import Counter
+from pathlib import Path
 from typing import List, Optional
 
 from src.app import chatbot_logic
@@ -25,6 +26,25 @@ from src.app import data_manager
 
 
 app = FastAPI()
+
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+VITE_DIST_DIR = ROOT_DIR / "Frontend" / "chatbot-frontend" / "dist"
+LEGACY_STATIC_DIR = ROOT_DIR / "src" / "app" / "chatbot-frontend"
+
+
+def _get_frontend_dir() -> Path:
+    return VITE_DIST_DIR if VITE_DIST_DIR.exists() else LEGACY_STATIC_DIR
+
+
+FRONTEND_DIR = _get_frontend_dir()
+FRONTEND_INDEX = FRONTEND_DIR / "index.html"
+
+print(f"[frontend] Serving static files from: {FRONTEND_DIR}")
+
+
+def _get_frontend_index() -> Path | None:
+    return FRONTEND_INDEX if FRONTEND_INDEX.exists() else None
 
 
 
@@ -48,7 +68,7 @@ app.add_middleware(
 
 app.include_router(auth.router, tags=["auth"])
 
-app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "../app/chatbot-frontend")), name="static")
+app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")
 
 
 
@@ -128,11 +148,12 @@ class ConsentRequest(BaseModel):
 
 
 
-@app.get("/")
-
+@app.get("/", include_in_schema=False)
 async def read_root():
-
-    return RedirectResponse(url="/static/index.html")
+    index_file = _get_frontend_index()
+    if index_file:
+        return FileResponse(str(index_file))
+    raise HTTPException(status_code=404, detail="Frontend build not found")
 
 
 
@@ -688,3 +709,11 @@ async def delete_user_data(username: str, current_user: schemas.User = Depends(a
         raise HTTPException(status_code=403, detail="No autorizado")
     consent_manager.delete_user_data(username)
     return {"message": "Datos eliminados"}
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def frontend_fallback(full_path: str):
+    index_file = _get_frontend_index()
+    if index_file:
+        return FileResponse(str(index_file))
+    raise HTTPException(status_code=404, detail="Recurso no encontrado")
