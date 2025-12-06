@@ -91,11 +91,30 @@
         </div>
       </div>
     </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h3>Alertas y notificaciones</h3>
+        <div class="actions">
+          <button class="btn" @click="runAlertsNow" :disabled="runningAlerts">Evaluar ahora</button>
+          <button class="btn" @click="loadAlerts" :disabled="runningAlerts">Refrescar</button>
+        </div>
+      </div>
+      <div v-if="alertsError" class="status error">{{ alertsError }}</div>
+      <div v-else-if="!alerts.length" class="status">Sin alertas.</div>
+      <div class="grid" v-else>
+        <div class="student" v-for="a in alerts" :key="a.id">
+          <p class="meta"><strong>{{ a.type }}</strong> · {{ formatDate(a.created_at, true) }}</p>
+          <p class="meta">{{ a.message }}</p>
+          <p class="meta small" v-if="a.student">Estudiante: {{ a.student }}</p>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
 <script>
-import { fetchFamilySummary, logoutUser, fetchDailySummary, fetchObservations } from '@/services/api'
+import { fetchFamilySummary, logoutUser, fetchDailySummary, fetchObservations, fetchAlerts, runAlerts } from '@/services/api'
 import { getSession, clearSession } from '@/services/session'
 
 export default {
@@ -110,7 +129,10 @@ export default {
       dailyError: '',
       notesByStudent: {},
       notesError: '',
-      copyStatus: ''
+      copyStatus: '',
+      alerts: [],
+      alertsError: '',
+      runningAlerts: false
     }
   },
   created() {
@@ -152,7 +174,7 @@ export default {
     },
     async loadAll() {
       await this.load()
-      await Promise.all([this.loadDaily(), this.loadNotes()])
+      await Promise.all([this.loadDaily(), this.loadNotes(), this.loadAlerts()])
     },
     async loadSummary() {
       await this.loadAll()
@@ -163,6 +185,27 @@ export default {
         this.daily = await fetchDailySummary(this.session.token)
       } catch (err) {
         this.dailyError = err?.message || 'No se pudo cargar el resumen diario.'
+      }
+    },
+    async loadAlerts() {
+      this.alertsError = ''
+      try {
+        this.alerts = await fetchAlerts(this.session.token)
+      } catch (err) {
+        this.alertsError = err?.message || 'No se pudieron cargar las alertas.'
+      }
+    },
+    async runAlertsNow() {
+      if (this.runningAlerts) return
+      this.runningAlerts = true
+      this.alertsError = ''
+      try {
+        await runAlerts(this.session.token)
+        await this.loadAlerts()
+      } catch (err) {
+        this.alertsError = err?.message || 'No se pudieron evaluar las alertas.'
+      } finally {
+        this.runningAlerts = false
       }
     },
     async loadNotes() {
@@ -333,5 +376,10 @@ li:last-child {
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 12px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
 }
 </style>

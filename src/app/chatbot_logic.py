@@ -6,22 +6,64 @@ import spacy
 import random
 import re
 from collections import Counter
+import os
 
 # Load the spaCy model
 nlp = spacy.load("es_core_news_sm")
 DEFAULT_PROMPT_PREFIX = "Eres un tutor de comunicación aumentativa que responde en español claro y breve."
 DEFAULT_FALLBACK = "No encontré una respuesta específica, pero podemos seguir practicando tus pictogramas."
+EMOTION_KEYWORDS = {
+    'triste': 'triste',
+    'asustado': 'miedo',
+    'miedo': 'miedo',
+    'enojado': 'enojado',
+    'molesto': 'enojado',
+    'ansioso': 'ansioso',
+    'nervioso': 'ansioso',
+    'cansado': 'cansado',
+    'aburrido': 'cansado',
+    'feliz': 'orgulloso',
+    'contento': 'orgulloso'
+}
 
 class Chatbot:
     def __init__(self):
         self.tokenizer = AutoTokenizer.from_pretrained("mrm8488/spanish-t5-small-sqac-for-qa")
         self.model = AutoModelForSeq2SeqLM.from_pretrained("mrm8488/spanish-t5-small-sqac-for-qa")
         self.user_game_states = {}
-        self.support_content = data_manager.load_support_content()
+        # Canonical categories mapped to synonyms for loose matching.
+        self.category_synonyms = {
+            'animal': ['animal', 'animales', 'fauna', 'mascota'],
+            'comida': ['comida', 'alimento', 'comer', 'comidas', 'fruta', 'verdura'],
+            'transporte': ['transporte', 'vehiculo', 'vehículo', 'auto', 'carro', 'bus', 'camion'],
+            'escuela': ['escuela', 'clase', 'colegio', 'estudio'],
+            'hogar': ['casa', 'hogar', 'familia', 'cocina', 'cuarto']
+        }
+
+    def _infer_category(self, sentence_lower: str) -> str | None:
+        for canon, terms in self.category_synonyms.items():
+            if any(term in sentence_lower for term in terms):
+                return canon
+        return None
+
+
+    def _normalize_text(self, text: str):
+        cleaned = unidecode(re.sub(r"[^a-z0-9áéíóúñü\s]", " ", text.lower()))
+        return [t for t in cleaned.split() if t]
+
+    def _is_parroting(self, question: str, answer: str) -> bool:
+        if not answer:
+            return True
+        ans_tokens = self._normalize_text(answer)
+        if not ans_tokens or len(ans_tokens) <= 4:
+            return True
+        question_tokens = set(self._normalize_text(question))
+        overlap = sum(1 for t in ans_tokens if t in question_tokens)
+        return (overlap / len(ans_tokens)) >= 0.7
 
     def reload_support_content(self):
-        """Reload support packs when teachers update curated content."""
-        self.support_content = data_manager.load_support_content()
+        """Legacy no-op kept for compatibility when support packs were curated."""
+        return
 
     def _get_default_game_state(self):
         """Returns a new, default game state dictionary."""
@@ -34,7 +76,10 @@ class Chatbot:
             "guided_session_step": 0,
             "failures": 0,
             "assignment_metadata": None,
-            "use_scripted": False
+            "use_scripted": False,
+            "drill_items": [],
+            "drill_round": 0,
+            "drill_target": None
         }
 
     def _get_user_game_state(self, username: str):
@@ -59,6 +104,133 @@ class Chatbot:
     def _single_entry_response(self, text: str, pictogram_path: str | None = None):
         """Helper for deterministic responses without token splitting."""
         return [{'word': text, 'pictogram': pictogram_path}]
+
+    def _describe_with_pictogram(self, sentence: str):
+        """Builds a short descriptive sentence from pictogram metadata when available."""
+        tokens = re.findall(r"[\wáéíóúñü]+", sentence.lower())
+        skip = {"como", "qué", "que", "un", "una", "el", "la", "es", "soy", "estoy", "palabra", "veces"}
+        for token in tokens:
+            if token in skip:
+                continue
+            pictogram = nlp_utils.find_pictogram(token, nlp_utils.pictograms)
+            if not pictogram:
+                continue
+            keywords = [kw.get('keyword') for kw in pictogram.get('keywords', []) if kw.get('keyword')]
+            extra = []
+            # Use ARASAAC tags as extra hints when keywords are few.
+            if len(keywords) < 3:
+                extra = pictogram.get('tags', [])
+            focus = (keywords + extra)[:4]
+            if not focus:
+                continue
+            text = f"{token.capitalize()} se asocia con {', '.join(focus)}. Dime cuál ves en tu pictograma."
+            return self._single_entry_response(text, pictogram.get('path'))
+        return None
+
+    def _valid_pictogram(self, pictogram: dict) -> bool:
+        if not pictogram or not pictogram.get('path'):
+            return False
+        base = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/raw/ARASAAC_ES'))
+        return os.path.exists(os.path.join(base, pictogram['path']))
+
+    def _has_digits(self, text: str) -> bool:
+        return bool(re.search(r"\d", text))
+
+    def _maybe_digit_response(self, sentence: str, intent_info, emotion_info, suggested_pictograms, entities):
+        digits = re.findall(r"\d+", sentence)
+        if not digits:
+            return None
+        number_str = digits[0]
+        text = f"Veo el número {number_str}. Dime qué palabra o pictograma quieres practicar con ese número."
+        return self._package_response(self._single_entry_response(text), intent_info, emotion_info, suggested_pictograms, entities)
+
+    def _matches_category(self, pictogram: dict, category: str | None) -> bool:
+        if not category:
+            return True
+        tags = [t.lower() for t in pictogram.get('tags', []) if t]
+        keywords = [(kw.get('keyword') or '').lower() for kw in pictogram.get('keywords', [])]
+        synonyms = self.category_synonyms.get(category, [category])
+        for syn in synonyms:
+            if any(syn in t for t in tags + keywords):
+                return True
+        return False
+
+    def _start_drill(self, username: str, top_k: int = 3, category: str | None = None):
+        game_state = self._get_user_game_state(username)
+        # Sample pictograms with keywords, short alphabetical keywords, and valid assets.
+        candidates = []
+        for p in nlp_utils.pictograms:
+            if not self._valid_pictogram(p):
+                continue
+            kws = [kw.get('keyword') for kw in p.get('keywords', []) if kw.get('keyword')]
+            if not kws:
+                continue
+            main_kw = kws[0]
+            if not re.fullmatch(r"[A-Za-záéíóúñüÁÉÍÓÚÑÜ]+", main_kw) or len(main_kw) > 10:
+                continue
+            if self._matches_category(p, category):
+                candidates.append(p)
+        if len(candidates) < 3:
+            # Fallback to general pool if category is too narrow.
+            fallback_items = [p for p in nlp_utils.pictograms if self._valid_pictogram(p)]
+            if len(fallback_items) >= 3:
+                candidates = fallback_items
+            else:
+                msg = "No encontré suficientes pictos. Prueba otra categoría o di solo 'practicar pictos'."
+                return self._single_entry_response(msg)
+        items = random.sample(candidates, k=min(top_k, len(candidates)))
+        game_state["drill_items"] = items
+        game_state["drill_round"] = 0
+        target = (items[0].get('keywords') or [{}])[0].get('keyword') or ""
+        game_state["drill_target"] = target
+        game_state["in_progress"] = True
+        game_state["mode"] = "drill"
+        # Build a pictogram-first prompt: instruction + option pictos
+        options = []
+        for pic in items:
+            kw = (pic.get('keywords') or [{}])[0].get('keyword', '')
+            options.append({'word': kw or '', 'pictogram': pic.get('path')})
+        return [{'word': f"Toca o di: {target}.", 'pictogram': items[0].get('path')}] + options
+
+    def _drill_next_round(self, username: str, previous_items: list):
+        game_state = self._get_user_game_state(username)
+        candidates = []
+        prev_paths = {p.get('path') for p in previous_items if isinstance(p, dict) and p.get('path')}
+        for p in nlp_utils.pictograms:
+            if p.get('path') in prev_paths:
+                continue
+            if not self._valid_pictogram(p):
+                continue
+            kws = [kw.get('keyword') for kw in p.get('keywords', []) if kw.get('keyword')]
+            if not kws:
+                continue
+            main_kw = kws[0]
+            if not re.fullmatch(r"[A-Za-záéíóúñüÁÉÍÓÚÑÜ]+", main_kw) or len(main_kw) > 10:
+                continue
+            candidates.append(p)
+        if not candidates:
+            candidates = [p for p in nlp_utils.pictograms if p.get('keywords') and self._valid_pictogram(p)]
+        items = random.sample(candidates, k=min(3, len(candidates)))
+        game_state["drill_items"] = items
+        game_state["drill_round"] += 1
+        target = (items[0].get('keywords') or [{}])[0].get('keyword') or ""
+        game_state["drill_target"] = target
+        options = []
+        for pic in items:
+            kw = (pic.get('keywords') or [{}])[0].get('keyword', '')
+            options.append({'word': kw or '', 'pictogram': pic.get('path')})
+        return [{'word': f"Ahora di o toca: {target}.", 'pictogram': items[0].get('path')}] + options
+
+    def _choice_prompt(self, suggested_pictograms):
+        if not suggested_pictograms:
+            return None
+        top = suggested_pictograms[:2]
+        names = [p.get('keyword') for p in top if p.get('keyword')]
+        if len(names) < 2:
+            return None
+        text = f"¿Quieres practicar {names[0]} o {names[1]}? Elige uno para empezar."
+        pictogram_path = top[0].get('path') if top[0].get('path') else None
+        return self._single_entry_response(text, pictogram_path)
 
     def _package_response(self, processed_sentence, intent_info, emotion_info, suggested_pictograms=None, entities=None):
         intent_label, intent_score = intent_info
@@ -92,23 +264,19 @@ class Chatbot:
     def _build_assignment_context(self, game_state: dict):
         metadata = game_state.get('assignment_metadata') or {}
         sections = []
-        assignment_support = self.support_content.get('assignment', {})
         if metadata.get('task'):
-            template = random.choice(assignment_support.get('intro_templates', [])) if assignment_support.get('intro_templates') else None
-            text = template.format(task=metadata['task'], words=", ".join(metadata.get('target_words', []))) if template else f"Objetivo actual: {metadata['task']}."
-            sections.append(text)
-        elif metadata.get('target_words'):
-            sections.append(f"Objetivo actual: practicar {', '.join(metadata['target_words'])}.")
+            sections.append(f"Objetivo actual: {metadata['task']}.")
+        if metadata.get('target_words'):
+            sections.append(f"Palabras objetivo: {', '.join(metadata['target_words'])}.")
         return " ".join(sections).strip()
 
     def _compose_transformer_input(self, username: str, sentence: str, role: str):
         game_state = self._get_user_game_state(username)
         progress_text = self._build_progress_context(username)
         assignment_text = self._build_assignment_context(game_state)
-        context_hint = self.support_content.get('general', {}).get('context_hint')
-        context_sections = [assignment_text, progress_text, context_hint]
+        context_sections = [assignment_text, progress_text]
         context = " ".join([sec for sec in context_sections if sec])
-        prompt_prefix = self.support_content.get('general', {}).get('prompt_prefix', DEFAULT_PROMPT_PREFIX)
+        prompt_prefix = DEFAULT_PROMPT_PREFIX
         if context:
             return f"{prompt_prefix} Contexto: {context} Pregunta: {sentence}"
         return f"{prompt_prefix} Pregunta: {sentence}"
@@ -127,30 +295,28 @@ class Chatbot:
         return [{'text': ent.text, 'label': ent.label_} for ent in doc.ents]
 
     def _maybe_scripted_response(self, username: str, sentence_lower: str, role: str):
-        general_support = self.support_content.get('general', {})
-        for trigger in general_support.get('greeting_triggers', []):
-            if trigger in sentence_lower:
-                greeting = random.choice(general_support.get('greetings', [general_support.get('fallback', DEFAULT_FALLBACK)]))
-                return self._single_entry_response(greeting)
-
         game_state = self._get_user_game_state(username)
         metadata = game_state.get('assignment_metadata')
         if metadata and role in ['child', 'student']:
-            assignment_support = self.support_content.get(metadata.get('type', 'assignment'), {})
-            template_list = assignment_support.get('intro_templates') or assignment_support.get('success')
-            if template_list:
-                text = random.choice(template_list)
-                words = metadata.get('target_words') or []
-                formatted = text.format(
-                    task=metadata.get('task', 'practicar palabras'),
-                    words=', '.join(words),
-                    word=words[0] if words else ''
-                )
-                pictogram_path = None
-                if words:
-                    pictogram = nlp_utils.find_pictogram(words[0], nlp_utils.pictograms)
-                    pictogram_path = pictogram['path'] if pictogram else None
-                return self._single_entry_response(formatted, pictogram_path)
+            words = metadata.get('target_words') or []
+            task = metadata.get('task', 'practicar palabras')
+            prompt = (
+                "Eres un tutor AAC. Genera un saludo breve y motivador en español "
+                "para iniciar una actividad con un niño. Incluye la tarea y las palabras objetivo si existen. "
+                f"Tarea: {task}. Palabras: {', '.join(words)}."
+            )
+            try:
+                inputs = self.tokenizer.encode(prompt, return_tensors="pt", max_length=256, truncation=True)
+                outputs = self.model.generate(inputs, max_length=80, num_beams=4, early_stopping=True)
+                text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            except Exception:
+                text = f"Vamos a {task}." if task else "¡Vamos a practicar!"
+
+            pictogram_path = None
+            if words:
+                pictogram = nlp_utils.find_pictogram(words[0], nlp_utils.pictograms)
+                pictogram_path = pictogram['path'] if pictogram else None
+            return self._single_entry_response(text, pictogram_path)
         return None
 
     def _generate_dynamic_steps(self, scenario: dict, sentence: str, emotion_label: str):
@@ -193,94 +359,58 @@ class Chatbot:
         return f"Ya practicamos sonidos como: {formatted}."
 
     def _scenario_template_response(self, username: str, sentence: str, sentence_lower: str, intent_label: str, emotion_label: str):
-        scenarios = self.support_content.get('scenarios', [])
-        if not isinstance(scenarios, list):
-            return None
-
-        for entry in scenarios:
-            triggers = entry.get('triggers') or []
-            intents = entry.get('intents') or []
-            matches_intent = intent_label in intents if intents else False
-            matches_trigger = any(trigger in sentence_lower for trigger in triggers if trigger)
-            if not (matches_intent or matches_trigger):
-                continue
-
-            steps = entry.get('steps') or []
-            if entry.get('dynamic_steps'):
-                steps = self._generate_dynamic_steps(entry, sentence, emotion_label)
-
-            text_parts = [entry.get('response')]
-            if entry.get('id') == 'terapia_practicar_sonido':
-                summary = self._summarize_recent_practice(username)
-                if summary:
-                    text_parts.append(summary)
-            if steps:
-                ordered = " ".join(f"{idx + 1}. {step}" for idx, step in enumerate(steps))
-                text_parts.append(ordered)
-            if entry.get('follow_up'):
-                text_parts.append(entry['follow_up'])
-            text = " ".join(part.strip() for part in text_parts if part).strip()
-            pictogram_path = None
-            keyword = entry.get('pictogram_keyword')
-            if keyword:
-                pictogram = nlp_utils.find_pictogram(keyword, nlp_utils.pictograms)
-                pictogram_path = pictogram['path'] if pictogram else None
-            if text:
-                return self._single_entry_response(text, pictogram_path)
         return None
 
     def _related_vocab_response(self, sentence: str):
-        """Returns a deterministic hint tying the word to related vocabulary."""
-        related_map = self.support_content.get('related_vocab', {})
-        if not related_map:
+        tokens = [t for t in nlp(sentence) if t.pos_ in {"NOUN", "PROPN"}]
+        if not tokens:
             return None
+        focus = tokens[0].lemma_.lower()
+        suggestions = self._suggest_pictograms(focus, top_k=4)
+        if not suggestions:
+            return self._single_entry_response("Puedo mostrar pictos si me dices la palabra a relacionar.")
+        options = []
+        for s in suggestions:
+            options.append({'word': s.get('keyword') or focus, 'pictogram': s.get('path')})
+        return [{'word': f"Practiquemos palabras relacionadas con {focus}:", 'pictogram': None}] + options
 
-        general_support = self.support_content.get('general', {})
-        templates = general_support.get('related_templates', [])
-        fallback_template = "Cuando dices {word}, también recuerda {associations}."
-
-        tokens = re.findall(r"[\wáéíóúñü]+", sentence.lower())
-        guessed = self._semantic_card_match(sentence.lower())
-        if guessed:
-            tokens.insert(0, guessed)
-        for token in tokens:
-            normalized = unidecode(token)
-            associations = related_map.get(normalized)
-            pictogram = nlp_utils.find_pictogram(token, nlp_utils.pictograms)
-            if not associations and pictogram:
-                associations = [kw.get('keyword') for kw in pictogram.get('keywords', []) if kw.get('keyword') and kw.get('keyword').lower() != token]
-            if not associations:
-                continue
-
-            assoc_text = ", ".join(associations[:3])
-            template = random.choice(templates) if templates else fallback_template
-            text = template.format(word=token, associations=assoc_text)
-            pictogram_path = pictogram['path'] if pictogram else None
-            return self._single_entry_response(text, pictogram_path)
-        return None
+    def _sample_generic_pictos(self, n: int = 4):
+        picks = []
+        for p in nlp_utils.pictograms:
+            if len(picks) >= n:
+                break
+            if self._valid_pictogram(p):
+                kw = (p.get('keywords') or [{}])[0].get('keyword', '')
+                picks.append({'word': kw, 'pictogram': p.get('path')})
+        return picks
 
     def _semantic_card_match(self, sentence_lower: str):
-        related_map = self.support_content.get('related_vocab', {})
-        if not related_map:
-            return None
-        tokens = set(re.findall(r"[\wáéíóúñü]+", sentence_lower))
-        tokens_unidecode = {unidecode(t) for t in tokens}
-        for main_word, associations in related_map.items():
-            for assoc in associations:
-                if unidecode(assoc.lower()) in tokens_unidecode:
-                    return main_word
         return None
 
     def _emotion_support_response(self, emotion_label: str):
-        responses = {
-            'triste': "Siento que estés triste. Respira conmigo y elige el pictograma de abrazo si quieres contarme más.",
-            'ansioso': "Cuando algo preocupa, respiramos lento y nombramos lo que vemos. Estoy contigo.",
-            'enojado': "Está bien estar enojado. Sacude tus manos y cuenta hasta cinco antes de seguir.",
-            'orgulloso': "¡Qué orgullo! Guarda ese sentimiento tocando el pictograma de trofeo.",
-            'calmo': "Qué bueno sentir calma. Podemos seguir a tu ritmo.",
-            'neutral': "Gracias por contarme. Seguimos juntos."
-        }
-        return self._single_entry_response(responses.get(emotion_label, responses['neutral']))
+        prompt = (
+            "Eres un tutor AAC en español. En 18 palabras, valida la emoción y da 2 micro-acciones para regularse. "
+            "Usa tono cálido y menciona un pictograma sugerido (respirar, abrazo, calma, trofeo). "
+            f"Emoción: {emotion_label}."
+        )
+        try:
+            inputs = self.tokenizer.encode(prompt, return_tensors="pt", max_length=256, truncation=True)
+            outputs = self.model.generate(inputs, max_length=70, num_beams=4, early_stopping=True)
+            text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        except Exception:
+            text = "Respira conmigo, toca calma o abrazo y dime cómo sigues."
+
+        # Add a check-out question to close the loop with the child.
+        text = f"{text} ¿Te sientes mejor o igual?"
+
+        pictogram_path = None
+        if emotion_label in ['triste', 'ansioso', 'enojado', 'miedo']:
+            pictogram = nlp_utils.find_pictogram('calma', nlp_utils.pictograms) or nlp_utils.find_pictogram('respirar', nlp_utils.pictograms)
+            pictogram_path = pictogram['path'] if pictogram else None
+        elif emotion_label in ['orgulloso', 'feliz']:
+            pictogram = nlp_utils.find_pictogram('trofeo', nlp_utils.pictograms)
+            pictogram_path = pictogram['path'] if pictogram else None
+        return self._single_entry_response(text, pictogram_path)
 
     def _extract_permission_action(self, sentence_lower: str):
         match = re.search(r"(?:puedo|me dejas|me permites|está bien si|esta bien si)(.+)", sentence_lower)
@@ -292,25 +422,29 @@ class Chatbot:
     def _consent_response(self, username: str, sentence: str, sentence_lower: str):
         action = self._extract_permission_action(sentence_lower)
         consent_manager.log_audit('chatbot_consent_request', username, metadata={'text': sentence})
-        if action:
-            text = f"Sí, avisemos a tu adulto. Puedes {action} y marca el pictograma de pausa cuando regreses."
-        else:
-            text = "Gracias por avisar. Anoto tu solicitud y esperamos confirmación del adulto."
-        return self._single_entry_response(text)
-
-    def _factual_response(self, sentence: str):
         prompt = (
-            "Responde en español latino con máximo 25 palabras. "
-            "Da una explicación simple para niños y sugiere un pictograma si aplica. "
-            f"Pregunta: {sentence}"
+            "Eres un tutor AAC en español. Responde en 18 palabras. "
+            "1) Agradece y confirma que avisarás al adulto. 2) Pide esperar con pictograma de pausa. 3) Repite la acción pedida. "
+            f"Petición: {action or sentence}."
         )
         try:
             inputs = self.tokenizer.encode(prompt, return_tensors="pt", max_length=256, truncation=True)
-            outputs = self.model.generate(inputs, max_length=80, num_beams=4, early_stopping=True)
+            outputs = self.model.generate(inputs, max_length=70, num_beams=4, early_stopping=True)
             text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
         except Exception:
-            text = self.support_content.get('general', {}).get('fallback', DEFAULT_FALLBACK)
-        return self._wrap_text_with_pictograms(text)
+            text = "Aviso al adulto, usa pausa y esperamos juntos."
+
+        pictogram = nlp_utils.find_pictogram('pausa', nlp_utils.pictograms) or nlp_utils.find_pictogram('esperar', nlp_utils.pictograms)
+        pictogram_path = pictogram['path'] if pictogram else None
+        return self._single_entry_response(text, pictogram_path)
+
+    def _factual_response(self, sentence: str):
+        text = (
+            "Por ahora no doy respuestas de ciencia o datos. "
+            "Puedo ayudarte a practicar pictogramas, jugar, expresar emociones o pedir ayuda." 
+            "Dime qué quieres practicar."
+        )
+        return self._single_entry_response(text)
 
     def clear_user_game_state(self, username: str):
         """Clears the game state for a specific user."""
@@ -375,8 +509,34 @@ class Chatbot:
         sentence_lower = sentence.lower()
         role = role or 'student'
         intent_info, emotion_info = self._detect_intent_emotion(sentence)
-        intent_label, _ = intent_info
+        intent_label, intent_score = intent_info
         emotion_label, _ = emotion_info
+
+        # Upgrade to emotional check-in when emotion keywords are present, even if intent is low-confidence.
+        for keyword, mapped in EMOTION_KEYWORDS.items():
+            if keyword in sentence_lower:
+                intent_label = 'emocional_checkin'
+                intent_info = (intent_label, max(intent_score, 0.51))
+                emotion_label = mapped
+                emotion_info = (emotion_label, 0.7)
+                break
+
+        # Treat "por qué/por que/porque" questions as factual to avoid parroting.
+        if re.search(r"\bpor que\b|\bpor qué\b|^porque\b", sentence_lower):
+            intent_label = 'factual_pregunta'
+            intent_info = (intent_label, max(intent_score, 0.65))
+
+        # Health/pain quick support
+        if any(word in sentence_lower for word in ["duele", "dolor", "barriga", "panza", "estomago", "estómago"]):
+            pictogram = nlp_utils.find_pictogram('doctor', nlp_utils.pictograms) or nlp_utils.find_pictogram('ayuda', nlp_utils.pictograms)
+            pictogram_path = pictogram['path'] if pictogram and self._valid_pictogram(pictogram) else None
+            text = "Siento que te duele. Respira 3 veces, toca ayuda/médico y avisa a tu adulto." 
+            return self._package_response(self._single_entry_response(text, pictogram_path), ('salud', 0.7), emotion_info, suggested_pictograms=self._suggest_pictograms(sentence), entities=self._extract_entities(sentence))
+
+        # If intent confidence is low, fall back to open-ended generation to avoid misroutes.
+        if intent_score < 0.5:
+            intent_label = 'otra_consulta'
+            intent_info = (intent_label, intent_score)
         suggested_pictograms = self._suggest_pictograms(sentence)
         entities = self._extract_entities(sentence)
 
@@ -398,6 +558,23 @@ class Chatbot:
                         suggested_pictograms,
                         entities
                     )
+            elif game_state["mode"] == "drill":
+                target = (game_state.get("drill_target") or "").lower()
+                if target and target in sentence_lower:
+                    # correct, move to next round or finish after 3 rounds
+                    if game_state.get("drill_round", 0) >= 2:
+                        self.clear_user_game_state(username)
+                        return self._package_response(self._single_entry_response("¡Genial! Practicamos tres pictos. ¿Quieres otro juego?"), intent_info, emotion_info, game_state.get("drill_items", []), entities)
+                    next_prompt = self._drill_next_round(username, game_state.get("drill_items", []))
+                    return self._package_response(next_prompt, intent_info, emotion_info, game_state.get("drill_items", []), entities)
+                else:
+                    # Re-show options as pictograms for clarity
+                    options = []
+                    for pic in game_state.get("drill_items", []):
+                        kw = (pic.get('keywords') or [{}])[0].get('keyword', '')
+                        options.append({'word': kw or '', 'pictogram': pic.get('path')})
+                    prompt = [{'word': f"Elige o di: {game_state.get('drill_target')}.", 'pictogram': None}] + options
+                    return self._package_response(prompt, intent_info, emotion_info, game_state.get("drill_items", []), entities)
             elif game_state["mode"] == "guided_session":
                 if sentence_lower == game_state["correct_answer"].lower():
                     game_state["guided_session_step"] += 1
@@ -406,18 +583,43 @@ class Chatbot:
                         pictogram = nlp_utils.find_pictogram(next_word, nlp_utils.pictograms)
                         game_state["correct_answer"] = next_word
                         game_state["pictogram_path"] = pictogram['path'] if pictogram else None
-                        success_text = random.choice(self.support_content.get('guided_session', {}).get('success', ["¡Muy bien!"])).format(word=next_word)
+                        prompt = (
+                            "Eres un tutor AAC. Genera un refuerzo breve en español para un niño que acertó una palabra. "
+                            f"Palabra: {next_word}. Sé cálido y usa menos de 15 palabras."
+                        )
+                        try:
+                            inputs = self.tokenizer.encode(prompt, return_tensors="pt", max_length=256, truncation=True)
+                            outputs = self.model.generate(inputs, max_length=60, num_beams=4, early_stopping=True)
+                            success_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+                        except Exception:
+                            success_text = "¡Muy bien!"
                         return self._package_response(self._single_entry_response(success_text, game_state["pictogram_path"]), intent_info, emotion_info, suggested_pictograms, entities)
                     else:
                         self.clear_user_game_state(username)
-                        guided_success = self.support_content.get('guided_session', {}).get('success', [])
-                        farewell = random.choice(guided_success).format(word="") if guided_success else "¡Felicidades! Has completado la sesión."
+                        prompt = (
+                            "Eres un tutor AAC. Felicita en español a un niño por terminar una sesión guiada. "
+                            "Usa menos de 18 palabras y tono alegre."
+                        )
+                        try:
+                            inputs = self.tokenizer.encode(prompt, return_tensors="pt", max_length=256, truncation=True)
+                            outputs = self.model.generate(inputs, max_length=60, num_beams=4, early_stopping=True)
+                            farewell = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+                        except Exception:
+                            farewell = "¡Felicidades! Has completado la sesión."
                         return self._package_response(self._single_entry_response(farewell), intent_info, emotion_info, suggested_pictograms, entities)
                 else:
                     game_state["failures"] += 1
                     clue = game_state["correct_answer"][:1 + game_state["failures"]]
-                    hint_template = self.support_content.get('guided_session', {}).get('hint', "La palabra comienza con {clue}")
-                    hint_text = hint_template.format(clue=clue.upper())
+                    prompt = (
+                        "Eres un tutor AAC. Da una pista breve sin revelar la palabra completa. "
+                        f"Letra inicial: {clue.upper()}. Máximo 12 palabras."
+                    )
+                    try:
+                        inputs = self.tokenizer.encode(prompt, return_tensors="pt", max_length=128, truncation=True)
+                        outputs = self.model.generate(inputs, max_length=40, num_beams=4, early_stopping=True)
+                        hint_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+                    except Exception:
+                        hint_text = f"La palabra comienza con {clue.upper()}."
                     return self._package_response(self._single_entry_response(hint_text, game_state["pictogram_path"]), intent_info, emotion_info, suggested_pictograms, entities)
         else:
             game_match = re.match(r"jugar a (.+)", sentence_lower)
@@ -426,15 +628,24 @@ class Chatbot:
                 game_response = self.start_game(username, category)
                 return self._package_response(self._single_entry_response(game_response['text'], game_response['pictogram']), intent_info, emotion_info, suggested_pictograms, entities)
             elif any(word in sentence_lower.split() for word in ["juego", "jugar", "juguemos"]):
-                game_response = self.start_game(username)
+                category = self._infer_category(sentence_lower)
+                game_response = self.start_game(username, category)
                 return self._package_response(self._single_entry_response(game_response['text'], game_response['pictogram']), intent_info, emotion_info, suggested_pictograms, entities)
             scripted = self._maybe_scripted_response(username, sentence_lower, role)
             if scripted:
                 return self._package_response(scripted, intent_info, emotion_info, suggested_pictograms, entities)
 
-            scenario_match = self._scenario_template_response(username, sentence, sentence_lower, intent_label, emotion_label)
-            if scenario_match:
-                return self._package_response(scenario_match, intent_info, emotion_info, suggested_pictograms, entities)
+            # Handle numeric-only inputs early with a clarifying prompt.
+            digit_response = self._maybe_digit_response(sentence, intent_info, emotion_info, suggested_pictograms, entities)
+            if digit_response:
+                return digit_response
+
+            # Start a pictogram drill if user asks to practice pictos.
+            if any(trigger in sentence_lower for trigger in ["practicar pictos", "practicar pictogramas", "drill", "practica pictos"]):
+                category = self._infer_category(sentence_lower)
+                drill_intro = self._start_drill(username, category=category)
+                # Surface drill pictos as suggestions so FE can render larger options.
+                return self._package_response(drill_intro, intent_info, emotion_info, game_state.get("drill_items", []), entities)
 
             if intent_label == 'juego_pista':
                 guess = self._semantic_card_match(sentence_lower)
@@ -442,6 +653,11 @@ class Chatbot:
                     pictogram = nlp_utils.find_pictogram(guess, nlp_utils.pictograms)
                     text = f"Creo que piensas en {guess}. Busca ese pictograma y dime si coincide."
                     return self._package_response(self._single_entry_response(text, pictogram['path'] if pictogram else None), intent_info, emotion_info, suggested_pictograms, entities)
+
+            if intent_label == 'concepto_relacionado':
+                related = self._related_vocab_response(sentence)
+                if related:
+                    return self._package_response(related, intent_info, emotion_info, suggested_pictograms, entities)
 
             if intent_label == 'consentimiento':
                 return self._package_response(self._consent_response(username, sentence, sentence_lower), intent_info, emotion_info, suggested_pictograms, entities)
@@ -452,9 +668,17 @@ class Chatbot:
             if intent_label == 'factual_pregunta':
                 return self._package_response(self._factual_response(sentence), intent_info, emotion_info, suggested_pictograms, entities)
 
-            related = self._related_vocab_response(sentence)
-            if related:
-                return self._package_response(related, intent_info, emotion_info, suggested_pictograms, entities)
+            # If the question is a simple noun or "qué/cómo es" pattern, try a pictogram-based description first (only for very short inputs without digits).
+            if not self._has_digits(sentence) and (re.search(r"\b(que es|qué es|como es|cómo es)\b", sentence_lower) or len(sentence_lower.split()) <= 2):
+                described = self._describe_with_pictogram(sentence)
+                if described:
+                    return self._package_response(described, intent_info, emotion_info, suggested_pictograms, entities)
+
+            # Quick option sampler when user asks for pictos/options.
+            if "muestrame opciones de pictos" in sentence_lower or "muestrame pictos" in sentence_lower:
+                sampled = self._sample_generic_pictos(4)
+                prompt = [{'word': "Elige un picto para practicar:", 'pictogram': None}] + sampled
+                return self._package_response(prompt, intent_info, emotion_info, sampled, entities)
 
             input_text = self._compose_transformer_input(username, sentence, role)
             try:
@@ -462,11 +686,22 @@ class Chatbot:
                 outputs = self.model.generate(inputs, max_length=150, num_beams=4, early_stopping=True)
                 response_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
             except Exception:
-                fallback_text = self.support_content.get('general', {}).get('fallback', DEFAULT_FALLBACK)
+                fallback_text = DEFAULT_FALLBACK
                 return self._package_response(self._wrap_text_with_pictograms(fallback_text), intent_info, emotion_info, suggested_pictograms, entities)
 
+            if self._is_parroting(sentence, response_text) or len(response_text.split()) < 4:
+                # Force a factual-style answer to avoid parroting.
+                factual = self._factual_response(sentence)
+                return self._package_response(factual, ('factual_pregunta', max(intent_score, 0.65)), emotion_info, suggested_pictograms, entities)
+
             if len(response_text.split()) < 3:
-                fallback_text = self.support_content.get('general', {}).get('fallback', DEFAULT_FALLBACK)
+                described = self._describe_with_pictogram(sentence)
+                if described:
+                    return self._package_response(described, intent_info, emotion_info, suggested_pictograms, entities)
+                choice = self._choice_prompt(suggested_pictograms)
+                if choice:
+                    return self._package_response(choice, intent_info, emotion_info, suggested_pictograms, entities)
+                fallback_text = DEFAULT_FALLBACK
                 return self._package_response(self._wrap_text_with_pictograms(fallback_text), intent_info, emotion_info, suggested_pictograms, entities)
 
             return self._package_response(self._wrap_text_with_pictograms(response_text), intent_info, emotion_info, suggested_pictograms, entities)

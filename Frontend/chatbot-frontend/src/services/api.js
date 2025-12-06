@@ -128,4 +128,12 @@ export function fetchFamilySummary(token) {
   return request('/family-summary', { token })
 }
 
+export function fetchAlerts(token) {
+  return request('/alerts', { token })
+}
+
+export function runAlerts(token) {
+  return request('/alerts/run', { method: 'POST', token })
+}
+
 export { API_BASE_URL }
