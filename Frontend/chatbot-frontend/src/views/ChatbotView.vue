@@ -462,14 +462,22 @@ export default {
       };
       this.recognition.onerror = () => {
         this.listening = false;
+        this.errorMessage = "Activa el micrófono (HTTPS y permisos).";
       };
     },
     toggleMic() {
       if (!this.recognition) return;
       if (this.listening) {
+        this.listening = false;
         this.recognition.stop();
-      } else {
+        return;
+      }
+      this.listening = true; // provide immediate visual feedback
+      try {
         this.recognition.start();
+      } catch (err) {
+        this.listening = false;
+        this.errorMessage = "No se pudo iniciar el micrófono. Revisa permisos o usa HTTPS.";
       }
     },
     speak(text, emotionLabel) {
