@@ -2,10 +2,11 @@
 
 Este documento explica cómo configurar el proyecto `ChatBot-IA`, instalar dependencias y ejecutar la aplicación.
 
-**Prerequisites**
-- **Git:** Para clonar el repositorio.
-- **Python:** Versión 3.10+ recomendada.
-- **Git LFS (Large File Storage):** Para manejar archivos grandes.
+**Prerequisitos**
+- **Git**: Para clonar el repositorio.
+- **Python**: Versión 3.10+ recomendada.
+- **Node.js + npm**: Necesario para el frontend Vite/Vue. Usa Node 18+ (LTS) para evitar errores de dependencias.
+- **Git LFS (Large File Storage)**: Para manejar archivos grandes.
     - **Instalación:**
         - **Debian/Ubuntu (WSL/Linux):** `sudo apt-get install git-lfs`
         - **macOS (Homebrew):** `brew install git-lfs`
@@ -33,17 +34,20 @@ Este documento explica cómo configurar el proyecto `ChatBot-IA`, instalar depen
 
 **Step 5: Install Python Dependencies**
 - **Instalar:** `pip install -r requirements.txt`
-- **Nota:** La instalación de `torch` puede ser grande y tomar algo de tiempo.
+- **Nota:** `torch` puede tardar; si falla en Windows, instala la rueda CPU como se indica en el README raíz.
 
-**Step 6: Download spaCy NLP Model**
-- **Comando:** `python -m spacy download es_core_news_sm`
+**Step 6: (Opcional) Descargar manualmente el modelo spaCy**
+- Solo si el paso anterior no lo instala automáticamente: `python -m spacy download es_core_news_sm`
 
 **Step 7: Run the FastAPI Server**
 - **Iniciar backend:** `uvicorn src.api.main:app --host 127.0.0.1 --port 8000`
 - **URL de servicio:** `http://127.0.0.1:8000`
 
-**Step 8: Access the Frontend**
-- **Abrir en navegador:** `http://127.0.0.1:8000/static/index.html`
+**Step 8: Setup and Run the Frontend (Vite + Vue 3)**
+- **Variables:** `cd Frontend/chatbot-frontend` y `cp .env.example .env` (ajusta `VITE_API_BASE_URL` si la API no está en `http://localhost:8000`).
+- **Instalar deps:** `npm install`
+- **Desarrollo:** `npm run dev` (abre el enlace que muestra Vite, p. ej. `http://localhost:5173`).
+- **Producción:** `npm run build` para generar `dist/`. El backend sirve `dist` automáticamente bajo `/static` al levantar Uvicorn, por lo que el frontend queda disponible en `http://localhost:8000/`.
 
 **Step 9: Create User Accounts (First Time Setup)**
 - **Nota:** Para funciones como seguimiento de progreso y sesiones, crea usuarios con `curl`, Postman o Insomnia mientras el servidor está corriendo.

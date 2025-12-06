@@ -34,7 +34,7 @@
 
         <div v-else>
           <div class="progress-list" v-if="wordStatuses.length">
-            <div v-for="item in wordStatuses" :key="item.word" :class="['progress-chip', item.status]">
+            <div v-for="item in wordStatuses" :key="item.idx" :class="['progress-chip', item.status]">
               <span>{{ labelWord(item.idx) }}</span>
               <small>{{ labelStatus(item.status) }}</small>
             </div>
@@ -44,7 +44,7 @@
             <p>Palabra {{ currentWordIndex + 1 }} de {{ assignment.words.length }}</p>
 
             <div class="pictogram-preview" v-if="currentPictogram">
-              <img :src="currentPictogramUrl" :alt="currentWord" />
+              <img :src="currentPictogramUrl" alt="Pictograma a adivinar" />
               <small>Adivina la palabra</small>
             </div>
             <div class="pictogram-preview missing" v-else>
