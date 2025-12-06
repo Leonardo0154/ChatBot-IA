@@ -92,6 +92,9 @@ class GuidedSessionWords(BaseModel):
     assignment_id: str | None = None
     title: str | None = None
     task: str | None = None
+    objectives: str | None = None
+    duration_minutes: int | None = None
+    support_level: str | None = None
 
 
 
@@ -109,6 +112,8 @@ class Assignment(BaseModel):
 
     task: str
     type: str = 'assignment'  # can be 'assignment' or 'guided_session'
+    target_students: list[str] | None = None
+    difficulty: str | None = None
 
 
 
@@ -117,6 +122,7 @@ class AssignmentResult(BaseModel):
     assignment_id: str
 
     answers: list
+    metadata: dict | None = None
 
 
 class SupportPackPayload(BaseModel):
@@ -217,14 +223,19 @@ async def process_sentence_endpoint(sentence: Sentence, current_user: schemas.Us
 
     chatbot_response = chatbot_logic.chatbot.process_sentence(current_user.username, sentence.text, current_user.role)
 
-    data_manager.log_interaction(current_user.username, sentence.text, chatbot_response)
+    data_manager.log_interaction(
+        current_user.username,
+        sentence.text,
+        chatbot_response.get("processed_sentence"),
+        intent=chatbot_response.get("intent"),
+        emotion=chatbot_response.get("emotion"),
+        suggested_pictograms=chatbot_response.get("suggested_pictograms"),
+        entities=chatbot_response.get("entities")
+    )
 
     return {
-
         "sentence": sentence.text,
-
-        "processed_sentence": chatbot_response
-
+        **chatbot_response
     }
 
 
@@ -470,6 +481,60 @@ async def family_summary(current_user: schemas.User = Depends(auth.get_current_a
         })
 
     return {"students": summary}
+
+
+@app.get("/metrics")
+async def get_metrics(current_user: schemas.User = Depends(auth.get_current_active_user)):
+    if current_user.role in ["teacher", "therapist"]:
+        results = data_manager.get_assignment_results_for_author(current_user.username)
+        students = list({r.get('username') for r in results if r.get('username')})
+        return data_manager.build_metrics(students)
+
+    if current_user.role == "parent":
+        students = current_user.students or []
+        return data_manager.build_metrics(students)
+
+    if current_user.role in ["student", "child"]:
+        return data_manager.build_metrics([current_user.username])
+
+    return {}
+
+
+@app.get("/notifications/daily-summary")
+async def daily_summary(current_user: schemas.User = Depends(auth.get_current_active_user)):
+    if current_user.role != "parent":
+        raise HTTPException(status_code=403, detail="Solo padres/tutores")
+    students = current_user.students or []
+    return data_manager.build_daily_summary(students)
+
+
+@app.get("/observations")
+async def list_observations(student: str | None = None, current_user: schemas.User = Depends(auth.get_current_active_user)):
+    if current_user.role in ["teacher", "therapist"]:
+        return data_manager.get_observations(student)
+
+    if current_user.role == "parent":
+        allowed_students = set(current_user.students or [])
+        if student:
+            if student not in allowed_students:
+                raise HTTPException(status_code=403, detail="Estudiante no autorizado")
+            return data_manager.get_observations(student)
+
+        notes: list[dict] = []
+        for s in allowed_students:
+            notes.extend(data_manager.get_observations(s))
+        notes.sort(key=lambda o: o.get("timestamp", ""))
+        return notes
+
+    raise HTTPException(status_code=403, detail="Rol no autorizado")
+
+
+@app.post("/observations")
+async def create_observation(student: str, text: str, current_user: schemas.User = Depends(auth.get_current_active_user)):
+    if current_user.role not in ["teacher", "therapist"]:
+        raise HTTPException(status_code=403, detail="Solo docentes o terapeutas")
+    data_manager.save_observation(current_user.username, student, text)
+    return {"message": "Observación guardada"}
 
 
 

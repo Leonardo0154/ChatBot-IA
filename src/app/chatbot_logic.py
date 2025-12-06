@@ -60,6 +60,23 @@ class Chatbot:
         """Helper for deterministic responses without token splitting."""
         return [{'word': text, 'pictogram': pictogram_path}]
 
+    def _package_response(self, processed_sentence, intent_info, emotion_info, suggested_pictograms=None, entities=None):
+        intent_label, intent_score = intent_info
+        emotion_label, emotion_score = emotion_info
+        return {
+            'processed_sentence': processed_sentence,
+            'intent': {'label': intent_label, 'score': intent_score},
+            'emotion': {'label': emotion_label, 'score': emotion_score},
+            'suggested_pictograms': suggested_pictograms or [],
+            'entities': entities or []
+        }
+
+    def _suggest_pictograms(self, sentence: str, top_k: int = 5):
+        try:
+            return nlp_utils.suggest_pictograms(sentence, top_k=top_k)
+        except Exception:
+            return []
+
     def _build_progress_context(self, username: str):
         summary = data_manager.get_user_progress_summary(username)
         sections = []
@@ -102,6 +119,12 @@ class Chatbot:
         intent = intent_classifier.predict_intent(sentence)
         emotion = emotion_classifier.predict_emotion(sentence)
         return intent, emotion
+
+    def _extract_entities(self, sentence: str):
+        if not sentence:
+            return []
+        doc = nlp(sentence)
+        return [{'text': ent.text, 'label': ent.label_} for ent in doc.ents]
 
     def _maybe_scripted_response(self, username: str, sentence_lower: str, role: str):
         general_support = self.support_content.get('general', {})
@@ -354,6 +377,8 @@ class Chatbot:
         intent_info, emotion_info = self._detect_intent_emotion(sentence)
         intent_label, _ = intent_info
         emotion_label, _ = emotion_info
+        suggested_pictograms = self._suggest_pictograms(sentence)
+        entities = self._extract_entities(sentence)
 
         if game_state["in_progress"]:
             if game_state["mode"] == "game":
@@ -362,11 +387,17 @@ class Chatbot:
                 if sentence_lower == correct or (semantic_guess and semantic_guess.lower() == correct):
                     response_text = f"¡Correcto! La palabra es {game_state['correct_answer']}."
                     self.clear_user_game_state(username)
-                    return [{'word': response_text, 'pictogram': None}]
+                    return self._package_response(self._single_entry_response(response_text), intent_info, emotion_info, suggested_pictograms, entities)
                 else:
                     game_state["failures"] += 1
                     clue = game_state["correct_answer"][:1 + game_state["failures"]]
-                    return [{'word': f"Inténtalo de nuevo. La palabra empieza por '{clue.upper()}'.", 'pictogram': game_state["pictogram_path"]}]
+                    return self._package_response(
+                        [{'word': f"Inténtalo de nuevo. La palabra empieza por '{clue.upper()}'.", 'pictogram': game_state["pictogram_path"]}],
+                        intent_info,
+                        emotion_info,
+                        suggested_pictograms,
+                        entities
+                    )
             elif game_state["mode"] == "guided_session":
                 if sentence_lower == game_state["correct_answer"].lower():
                     game_state["guided_session_step"] += 1
@@ -376,54 +407,54 @@ class Chatbot:
                         game_state["correct_answer"] = next_word
                         game_state["pictogram_path"] = pictogram['path'] if pictogram else None
                         success_text = random.choice(self.support_content.get('guided_session', {}).get('success', ["¡Muy bien!"])).format(word=next_word)
-                        return self._single_entry_response(success_text, game_state["pictogram_path"])
+                        return self._package_response(self._single_entry_response(success_text, game_state["pictogram_path"]), intent_info, emotion_info, suggested_pictograms, entities)
                     else:
                         self.clear_user_game_state(username)
                         guided_success = self.support_content.get('guided_session', {}).get('success', [])
                         farewell = random.choice(guided_success).format(word="") if guided_success else "¡Felicidades! Has completado la sesión."
-                        return self._single_entry_response(farewell)
+                        return self._package_response(self._single_entry_response(farewell), intent_info, emotion_info, suggested_pictograms, entities)
                 else:
                     game_state["failures"] += 1
                     clue = game_state["correct_answer"][:1 + game_state["failures"]]
                     hint_template = self.support_content.get('guided_session', {}).get('hint', "La palabra comienza con {clue}")
                     hint_text = hint_template.format(clue=clue.upper())
-                    return self._single_entry_response(hint_text, game_state["pictogram_path"])
+                    return self._package_response(self._single_entry_response(hint_text, game_state["pictogram_path"]), intent_info, emotion_info, suggested_pictograms, entities)
         else:
             game_match = re.match(r"jugar a (.+)", sentence_lower)
             if game_match:
                 category = game_match.group(1).strip()
                 game_response = self.start_game(username, category)
-                return self._single_entry_response(game_response['text'], game_response['pictogram'])
+                return self._package_response(self._single_entry_response(game_response['text'], game_response['pictogram']), intent_info, emotion_info, suggested_pictograms, entities)
             elif any(word in sentence_lower.split() for word in ["juego", "jugar", "juguemos"]):
                 game_response = self.start_game(username)
-                return self._single_entry_response(game_response['text'], game_response['pictogram'])
+                return self._package_response(self._single_entry_response(game_response['text'], game_response['pictogram']), intent_info, emotion_info, suggested_pictograms, entities)
             scripted = self._maybe_scripted_response(username, sentence_lower, role)
             if scripted:
-                return scripted
+                return self._package_response(scripted, intent_info, emotion_info, suggested_pictograms, entities)
 
             scenario_match = self._scenario_template_response(username, sentence, sentence_lower, intent_label, emotion_label)
             if scenario_match:
-                return scenario_match
+                return self._package_response(scenario_match, intent_info, emotion_info, suggested_pictograms, entities)
 
             if intent_label == 'juego_pista':
                 guess = self._semantic_card_match(sentence_lower)
                 if guess:
                     pictogram = nlp_utils.find_pictogram(guess, nlp_utils.pictograms)
                     text = f"Creo que piensas en {guess}. Busca ese pictograma y dime si coincide."
-                    return self._single_entry_response(text, pictogram['path'] if pictogram else None)
+                    return self._package_response(self._single_entry_response(text, pictogram['path'] if pictogram else None), intent_info, emotion_info, suggested_pictograms, entities)
 
             if intent_label == 'consentimiento':
-                return self._consent_response(username, sentence, sentence_lower)
+                return self._package_response(self._consent_response(username, sentence, sentence_lower), intent_info, emotion_info, suggested_pictograms, entities)
 
             if intent_label == 'emocional_checkin':
-                return self._emotion_support_response(emotion_label)
+                return self._package_response(self._emotion_support_response(emotion_label), intent_info, emotion_info, suggested_pictograms, entities)
 
             if intent_label == 'factual_pregunta':
-                return self._factual_response(sentence)
+                return self._package_response(self._factual_response(sentence), intent_info, emotion_info, suggested_pictograms, entities)
 
             related = self._related_vocab_response(sentence)
             if related:
-                return related
+                return self._package_response(related, intent_info, emotion_info, suggested_pictograms, entities)
 
             input_text = self._compose_transformer_input(username, sentence, role)
             try:
@@ -432,13 +463,13 @@ class Chatbot:
                 response_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
             except Exception:
                 fallback_text = self.support_content.get('general', {}).get('fallback', DEFAULT_FALLBACK)
-                return self._wrap_text_with_pictograms(fallback_text)
+                return self._package_response(self._wrap_text_with_pictograms(fallback_text), intent_info, emotion_info, suggested_pictograms, entities)
 
             if len(response_text.split()) < 3:
                 fallback_text = self.support_content.get('general', {}).get('fallback', DEFAULT_FALLBACK)
-                return self._wrap_text_with_pictograms(fallback_text)
+                return self._package_response(self._wrap_text_with_pictograms(fallback_text), intent_info, emotion_info, suggested_pictograms, entities)
 
-            return self._wrap_text_with_pictograms(response_text)
+            return self._package_response(self._wrap_text_with_pictograms(response_text), intent_info, emotion_info, suggested_pictograms, entities)
 
 # Instantiate the chatbot
 chatbot = Chatbot()

@@ -11,6 +11,7 @@ NOTES_FILE = 'data/notes.json'
 ASSIGNMENTS_FILE = 'data/assignments.json'
 ASSIGNMENT_RESULTS_FILE = 'data/assignment_results.json'
 SUPPORT_CONTENT_FILE = 'data/support_content.json'
+OBSERVATIONS_FILE = 'data/observations.json'
 
 DEFAULT_SUPPORT_CONTENT = {
     "general": {
@@ -216,14 +217,18 @@ DEFAULT_SUPPORT_CONTENT = {
     ]
 }
 
-def log_interaction(username, sentence, processed_sentence):
+def log_interaction(username, sentence, processed_sentence, intent=None, emotion=None, suggested_pictograms=None, entities=None):
     """Logs the user's sentence and the processed pictograms to a JSON file."""
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     log_entry = {
         'timestamp': datetime.now().isoformat(),
         'username': username,
         'sentence': sentence,
-        'processed_sentence': processed_sentence
+        'processed_sentence': processed_sentence,
+        'intent': intent,
+        'emotion': emotion,
+        'suggested_pictograms': suggested_pictograms,
+        'entities': entities
     }
     try:
         with open(LOG_FILE, 'a', encoding='utf-8') as f:
@@ -342,6 +347,100 @@ def get_assignment_results_for_author(author: str):
     return [r for r in results if r.get('assignment_id') in assignments]
 
 
+def get_observations(student: str | None = None):
+    if not os.path.exists(OBSERVATIONS_FILE):
+        return []
+    with open(OBSERVATIONS_FILE, 'r', encoding='utf-8') as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            return []
+    if student:
+        return [o for o in data if o.get('student') == student]
+    return data
+
+
+def save_observation(author: str, student: str, text: str):
+    os.makedirs(os.path.dirname(OBSERVATIONS_FILE), exist_ok=True)
+    observations = get_observations()
+    obs = {
+        'timestamp': datetime.now().isoformat(),
+        'author': author,
+        'student': student,
+        'text': text
+    }
+    observations.append(obs)
+    with open(OBSERVATIONS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(observations, f, ensure_ascii=False, indent=4)
+
+
+def build_metrics(usernames):
+    # Aggregate assignment accuracy per word and completion counts
+    results = get_assignment_results()
+    filtered = [r for r in results if r.get('username') in usernames]
+
+    word_stats = {}
+    assignment_counts = {}
+    last_activity = None
+    for r in filtered:
+        ts = r.get('timestamp')
+        if ts and (last_activity is None or ts > last_activity):
+            last_activity = ts
+        assignment_id = r.get('assignment_id')
+        assignment_counts[assignment_id] = assignment_counts.get(assignment_id, 0) + 1
+        for ans in r.get('answers', []):
+            word = (ans.get('word') or '').lower()
+            ok = bool(ans.get('ok'))
+            if not word:
+                continue
+            stats = word_stats.setdefault(word, {'attempts': 0, 'correct': 0})
+            stats['attempts'] += 1
+            if ok:
+                stats['correct'] += 1
+
+    per_word = [
+        {
+            'word': w,
+            'attempts': s['attempts'],
+            'correct': s['correct'],
+            'accuracy': s['correct'] / s['attempts'] if s['attempts'] else 0.0
+        }
+        for w, s in word_stats.items()
+    ]
+    per_word.sort(key=lambda x: -x['attempts'])
+
+    total_attempts = sum(stats['attempts'] for stats in word_stats.values())
+    total_correct = sum(stats['correct'] for stats in word_stats.values())
+
+    completions = [{'assignment_id': k, 'count': v} for k, v in assignment_counts.items()]
+
+    intent_emotion_stats = aggregate_intents_emotions(usernames)
+    return {
+        'per_word': per_word,
+        'completions': completions,
+        'last_activity': last_activity,
+        'overall_accuracy': total_correct / total_attempts if total_attempts else 0.0,
+        'total_attempts': total_attempts,
+        'total_correct': total_correct,
+        'intents': intent_emotion_stats.get('intent_counts', {}),
+        'emotions': intent_emotion_stats.get('emotion_counts', {}),
+        'avg_tokens': intent_emotion_stats.get('avg_tokens', 0.0),
+        'pictogram_hits': intent_emotion_stats.get('pictogram_hits', 0),
+        'top_intents': intent_emotion_stats.get('top_intents', []),
+        'top_emotions': intent_emotion_stats.get('top_emotions', []),
+        'log_events': intent_emotion_stats.get('total_logs', 0)
+    }
+
+
+def build_daily_summary(usernames):
+    metrics = build_metrics(usernames)
+    interactions = get_usage_logs_for_users(usernames, limit=200)
+    return {
+        'metrics': metrics,
+        'recent_interactions': interactions[-10:]
+    }
+
+
 def load_support_content():
     """Loads curated therapist/teacher support content."""
     support_data = copy.deepcopy(DEFAULT_SUPPORT_CONTENT)
@@ -423,6 +522,43 @@ def get_usage_logs_for_users(usernames, limit=50):
             if log.get('username') in usernames:
                 results.append(log)
     return results[-limit:]
+
+
+def aggregate_intents_emotions(usernames):
+    """Compute intent/emotion distributions and basic stats from usage logs."""
+    logs = get_usage_logs_for_users(usernames, limit=5000)
+    intent_counts = {}
+    emotion_counts = {}
+    token_lengths = []
+    pictogram_hits = 0
+    for log in logs:
+        intent = (log.get('intent') or {}).get('label')
+        emotion = (log.get('emotion') or {}).get('label')
+        if intent:
+            intent_counts[intent] = intent_counts.get(intent, 0) + 1
+        if emotion:
+            emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1
+        sentence = log.get('sentence') or ''
+        if sentence:
+            token_lengths.append(len(sentence.split()))
+        # count pictograms referenced in response
+        processed = log.get('processed_sentence') or []
+        for entry in processed:
+            if entry.get('pictogram'):
+                pictogram_hits += 1
+
+    avg_tokens = sum(token_lengths) / len(token_lengths) if token_lengths else 0.0
+    top_intents = sorted(intent_counts.items(), key=lambda x: -x[1])[:5]
+    top_emotions = sorted(emotion_counts.items(), key=lambda x: -x[1])[:5]
+    return {
+        'intent_counts': intent_counts,
+        'emotion_counts': emotion_counts,
+        'top_intents': top_intents,
+        'top_emotions': top_emotions,
+        'avg_tokens': avg_tokens,
+        'pictogram_hits': pictogram_hits,
+        'total_logs': len(logs)
+    }
 
 
 def get_assignment_results_for_users(usernames):

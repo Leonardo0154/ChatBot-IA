@@ -3,6 +3,10 @@
     <header class="page-header">
       <h1>Memorama de pictogramas</h1>
       <div class="actions">
+        <select v-model="selectedTopic" @change="restartGame">
+          <option value="">Tema: aleatorio</option>
+          <option v-for="t in topics" :key="t.value" :value="t.value">{{ t.label }}</option>
+        </select>
         <button class="btn" @click="restartGame">Reiniciar</button>
         <router-link class="btn" to="/chat">Volver al chat</router-link>
       </div>
@@ -44,7 +48,15 @@ export default {
       cards: [],
       flipped: [],
       matchedPairs: 0,
-      targetPairs: 8
+      targetPairs: 8,
+      allPictograms: [],
+      selectedTopic: '',
+      topics: [
+        { value: 'animals', label: 'Animales', keywords: ['animal', 'perro', 'gato', 'pez', 'pajaro', 'caballo'] },
+        { value: 'colors', label: 'Colores', keywords: ['rojo', 'azul', 'verde', 'amarillo'] },
+        { value: 'professions', label: 'Profesiones', keywords: ['doctor', 'profesor', 'bombero', 'policia'] },
+        { value: 'daily', label: 'Rutinas', keywords: ['comer', 'dormir', 'cepillar', 'banar', 'lavar'] }
+      ]
     }
   },
   created() {
@@ -58,8 +70,11 @@ export default {
       this.flipped = []
       this.matchedPairs = 0
       try {
-        const all = await fetchPictograms()
-        const selection = [...all].sort(() => 0.5 - Math.random()).slice(0, this.targetPairs)
+        if (!this.allPictograms.length) {
+          this.allPictograms = await fetchPictograms()
+        }
+        const source = this.filteredByTopic()
+        const selection = [...source].sort(() => 0.5 - Math.random()).slice(0, this.targetPairs)
         const paired = [...selection, ...selection]
           .map((pic, index) => ({
             id: `${pic.path}-${index}-${Math.random()}`,
@@ -76,6 +91,15 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+    filteredByTopic() {
+      if (!this.selectedTopic) return this.allPictograms
+      const topic = this.topics.find((t) => t.value === this.selectedTopic)
+      if (!topic) return this.allPictograms
+      const keywords = topic.keywords.map((k) => k.toLowerCase())
+      return this.allPictograms.filter((p) =>
+        (p.keywords || []).some((k) => keywords.includes((k.keyword || '').toLowerCase()))
+      )
     },
     onCardClick(card) {
       if (this.loading || card.flipped || card.matched || this.flipped.length === 2) return
@@ -116,6 +140,13 @@ export default {
   margin-bottom: 12px;
 }
 
+.actions select {
+  border: 1px solid #d7d9e4;
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin-right: 8px;
+}
+
 .card {
   background: #fff;
   border-radius: 14px;
@@ -127,6 +158,7 @@ export default {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 12px;
+  perspective: 800px;
 }
 
 .mem-card {
@@ -138,6 +170,7 @@ export default {
   transform-style: preserve-3d;
   transition: transform 0.4s ease;
   background: transparent;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 
 .mem-card.flipped {

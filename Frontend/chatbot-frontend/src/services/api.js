@@ -93,6 +93,23 @@ export function fetchAssignmentResults(token) {
   return request('/assignment-results', { token })
 }
 
+export function fetchMetrics(token) {
+  return request('/metrics', { token })
+}
+
+export function fetchDailySummary(token) {
+  return request('/notifications/daily-summary', { token })
+}
+
+export function fetchObservations(token, student = '') {
+  const qs = student ? `?student=${encodeURIComponent(student)}` : ''
+  return request(`/observations${qs}`, { token })
+}
+
+export function createObservation(token, payload) {
+  return request('/observations', { method: 'POST', token, body: payload })
+}
+
 export function startGuidedSession(token, words, meta = {}) {
   const { assignment_id: assignmentId, title, task } = meta
   return request('/start-guided-session', {

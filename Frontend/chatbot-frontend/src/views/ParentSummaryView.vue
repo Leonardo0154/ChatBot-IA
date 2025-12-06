@@ -7,6 +7,7 @@
       </div>
       <div class="actions">
         <button class="btn" @click="logout">Salir</button>
+        <button class="btn" @click="loadSummary">Refrescar resumen</button>
       </div>
     </header>
 
@@ -36,11 +37,65 @@
         </div>
       </div>
     </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h3>Métricas diarias</h3>
+        <div class="actions">
+          <button class="btn" @click="loadDaily" :disabled="loading">Resumen diario</button>
+          <button class="btn" @click="copyDaily" :disabled="loading">Copiar</button>
+        </div>
+      </div>
+      <div v-if="dailyError" class="status error">{{ dailyError }}</div>
+      <div v-else>
+        <p class="meta" v-if="daily.metrics?.last_activity">Última actividad: {{ formatDate(daily.metrics.last_activity, true) }}</p>
+        <div class="grid" v-if="daily.metrics?.per_word?.length">
+          <div class="student" v-for="w in daily.metrics.per_word" :key="w.word">
+            <p class="meta"><strong>{{ w.word }}</strong></p>
+            <p class="meta">Intentos: {{ w.attempts }} · Aciertos: {{ w.correct }} · Precisión: {{ (w.accuracy * 100).toFixed(0) }}%</p>
+          </div>
+        </div>
+        <div class="recent" v-if="daily.recent_interactions?.length">
+          <p class="label">Interacciones recientes</p>
+          <ul>
+            <li v-for="msg in daily.recent_interactions" :key="msg.timestamp">
+              <span class="ts">{{ formatDate(msg.timestamp, true) }}</span>
+              <span class="text">{{ msg.sentence }}</span>
+            </li>
+          </ul>
+        </div>
+        <p class="meta" v-if="copyStatus">{{ copyStatus }}</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h3>Notas de docentes</h3>
+        <button class="btn" @click="loadNotes" :disabled="loading">Refrescar</button>
+      </div>
+      <div v-if="notesError" class="status error">{{ notesError }}</div>
+      <div v-else-if="!summary.students.length" class="status">Vincula estudiantes para ver notas.</div>
+      <div class="grid" v-else>
+        <div class="student" v-for="s in summary.students" :key="s.student">
+          <p class="meta"><strong>{{ s.student }}</strong></p>
+          <div class="recent" v-if="getNotes(s.student).length">
+            <ul>
+              <li v-for="note in getNotes(s.student)" :key="note.timestamp + note.author">
+                <span class="ts">{{ formatDate(note.timestamp, true) }}</span>
+                <span class="text">{{ note.text }}</span>
+                <span class="tag">{{ note.author }}</span>
+              </li>
+            </ul>
+          </div>
+          <p class="meta" v-else>Sin notas nuevas.</p>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
 <script>
-import { fetchFamilySummary, logoutUser } from '@/services/api'
+import { fetchFamilySummary, logoutUser, fetchDailySummary, fetchObservations } from '@/services/api'
 import { getSession, clearSession } from '@/services/session'
 
 export default {
@@ -50,7 +105,12 @@ export default {
       session: null,
       summary: { students: [] },
       loading: false,
-      error: ''
+      error: '',
+      daily: {},
+      dailyError: '',
+      notesByStudent: {},
+      notesError: '',
+      copyStatus: ''
     }
   },
   created() {
@@ -59,7 +119,7 @@ export default {
       this.$router.replace({ name: 'login', query: { redirect: '/parent-summary' } })
       return
     }
-    this.load()
+    this.loadAll()
   },
   methods: {
     async logout() {
@@ -89,6 +149,67 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+    async loadAll() {
+      await this.load()
+      await Promise.all([this.loadDaily(), this.loadNotes()])
+    },
+    async loadSummary() {
+      await this.loadAll()
+    },
+    async loadDaily() {
+      this.dailyError = ''
+      try {
+        this.daily = await fetchDailySummary(this.session.token)
+      } catch (err) {
+        this.dailyError = err?.message || 'No se pudo cargar el resumen diario.'
+      }
+    },
+    async loadNotes() {
+      this.notesError = ''
+      try {
+        const students = this.summary.students || []
+        if (!students.length) {
+          this.notesByStudent = {}
+          return
+        }
+        const responses = await Promise.all(students.map((s) => fetchObservations(this.session.token, s.student)))
+        this.notesByStudent = students.reduce((acc, s, idx) => {
+          acc[s.student] = responses[idx] || []
+          return acc
+        }, {})
+      } catch (err) {
+        this.notesError = err?.message || 'No se pudieron cargar las notas.'
+      }
+    },
+    async copyDaily() {
+      if (!navigator?.clipboard) {
+        this.copyStatus = 'El portapapeles no está disponible en este navegador.'
+        return
+      }
+      const words = (this.daily.metrics?.per_word || []).slice(0, 5)
+      const lines = ['Resumen diario:', `Actividad: ${this.daily.metrics?.last_activity || '—'}`]
+      if (words.length) {
+        lines.push('Palabras practicadas:')
+        words.forEach((w) => lines.push(`- ${w.word}: ${w.correct}/${w.attempts} (${(w.accuracy * 100).toFixed(0)}%)`))
+      }
+      const recent = (this.daily.recent_interactions || []).slice(-3)
+      if (recent.length) {
+        lines.push('Interacciones recientes:')
+        recent.forEach((msg) => lines.push(`- ${msg.sentence}`))
+      }
+      try {
+        await navigator.clipboard.writeText(lines.join('\n'))
+        this.copyStatus = 'Resumen copiado.'
+      } catch (err) {
+        this.copyStatus = 'No se pudo copiar el resumen.'
+      }
+      setTimeout(() => {
+        this.copyStatus = ''
+      }, 2000)
+    },
+    getNotes(student) {
+      return this.notesByStudent[student] || []
     },
     formatDate(ts, showTime = false) {
       if (!ts) return '—'
@@ -124,6 +245,11 @@ export default {
   border-radius: 14px;
   padding: 18px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
 }
 
 .actions .btn {
@@ -199,5 +325,13 @@ li:last-child {
 
 .text {
   flex: 1;
+}
+
+.tag {
+  background: #0a0c19;
+  color: #00c8b3;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
 }
 </style>

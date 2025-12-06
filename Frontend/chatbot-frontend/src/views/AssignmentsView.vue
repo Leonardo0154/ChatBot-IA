@@ -64,7 +64,8 @@ export default {
       if (ROLE_INSTRUCTORS.includes(role)) {
         return this.assignments.filter((a) => a.author === username)
       }
-      return this.assignments
+      // Students: only assignments targeted to them or without target
+      return this.assignments.filter((a) => !a.target_students?.length || a.target_students.includes(username))
     }
   },
   created() {

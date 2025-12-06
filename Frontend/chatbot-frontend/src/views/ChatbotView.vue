@@ -41,6 +41,10 @@
         <h2>Chat With AI</h2>
 
         <div class="topbar-actions">
+          <label class="toggle">
+            <input type="checkbox" v-model="ttsEnabled" />
+            <span>Sonido</span>
+          </label>
           <button class="logout-btn" @click="logout">Salir</button>
         </div>
       </header>
@@ -74,6 +78,10 @@
                       :src="buildPictogramUrl(pic.pictogram || pic.path || pic)"
                       :alt="pic.word || 'pictogram'"
                     />
+                  </div>
+                  <div class="meta-tags" v-if="msg.intent || msg.emotion">
+                    <span class="chip" v-if="msg.intent">Intent: {{ msg.intent.label }} ({{ formatScore(msg.intent.score) }})</span>
+                    <span class="chip alt" v-if="msg.emotion">Emoción: {{ msg.emotion.label }}</span>
                   </div>
                 </div>
               </transition-group>
@@ -135,6 +143,35 @@
                 </button>
               </div>
             </div>
+
+            <div class="panel-block suggestions" v-if="suggestedPictos.length">
+              <div class="panel-header">
+                <h3>Sugeridos por el asistente</h3>
+                <div class="chips">
+                  <span v-if="lastIntent" class="chip">Intención: {{ lastIntent.label }} ({{ formatScore(lastIntent.score) }})</span>
+                  <span v-if="lastEmotion" class="chip alt">Emoción: {{ lastEmotion.label }}</span>
+                </div>
+              </div>
+              <div class="pictogram-grid">
+                <button
+                  v-for="(p, idx) in suggestedPictos"
+                  :key="p.path || idx"
+                  class="pictogram-card suggested"
+                  @click="useSuggested(p)"
+                  :title="p.keyword || 'pictograma sugerido'"
+                >
+                  <img :src="buildPictogramUrl(p.path)" :alt="p.keyword || 'pictogram'" />
+                  <small>{{ p.keyword || 'pictograma' }}</small>
+                  <small class="score" v-if="p.score">{{ formatScore(p.score) }}</small>
+                </button>
+              </div>
+            </div>
+
+            <div class="panel-block actions" v-if="lastIntent">
+              <h3>Acciones rápidas</h3>
+              <button v-if="lastIntent.label === 'juego_cooperativo'" class="btn" @click="$router.push('/memory-game')">Ir a juego de memoria</button>
+              <button v-if="lastIntent.label === 'autonomia_diaria'" class="btn" @click="$router.push('/assignments')">Ver pasos de autonomía</button>
+            </div>
           </aside>
 
         </section>
@@ -182,6 +219,10 @@ export default {
       speechSupported: false,
       listening: false,
       recognition: null,
+      ttsEnabled: true,
+      lastIntent: null,
+      lastEmotion: null,
+      suggestedPictos: [],
       icons: {
         add: addIcon,
         assignments: assignmentsIcon,
@@ -256,12 +297,18 @@ export default {
           .map(item => item.word)
           .join(" ")
           .trim();
+        this.lastIntent = response.intent;
+        this.lastEmotion = response.emotion;
+        this.suggestedPictos = response.suggested_pictograms || [];
         this.chat.push({
           text:
             botText || "No tengo una respuesta ahora mismo, pero sigamos practicando.",
           from: "bot",
-          pictograms: response.processed_sentence
+          pictograms: response.processed_sentence,
+          intent: response.intent,
+          emotion: response.emotion
         });
+        this.speak(botText, response.emotion?.label);
       } catch (error) {
         if (error.status === 401) {
           this.handleAuthExpiration();
@@ -324,6 +371,7 @@ export default {
       const keyword = pictogram?.keywords?.[0]?.keyword;
       if (keyword) {
         this.message = `${this.message} ${keyword}`.trim();
+        this.speak(keyword);
       }
     },
     appendSuggestedWord() {
@@ -368,6 +416,33 @@ export default {
       } else {
         this.recognition.start();
       }
+    },
+    speak(text, emotionLabel) {
+      if (!this.ttsEnabled || !text || typeof window === 'undefined' || !window.speechSynthesis) return;
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'es-ES';
+      // Ajusta el ritmo/tono según emoción detectada
+      if (emotionLabel === 'ansioso' || emotionLabel === 'triste') {
+        utter.rate = 0.9;
+        utter.pitch = 0.95;
+      } else if (emotionLabel === 'enojado') {
+        utter.rate = 0.95;
+        utter.pitch = 0.9;
+      } else if (emotionLabel === 'orgulloso') {
+        utter.rate = 1.05;
+        utter.pitch = 1.05;
+      }
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utter);
+    },
+    useSuggested(pic) {
+      if (!pic?.keyword) return;
+      this.message = `${this.message} ${pic.keyword}`.trim();
+      this.speak(pic.keyword, this.lastEmotion?.label);
+    },
+    formatScore(score) {
+      if (score === undefined || score === null) return '';
+      return `${Math.round(score * 100)}%`;
     }
   }
 };
@@ -491,6 +566,14 @@ export default {
 .topbar-actions {
   display: flex;
   gap: 15px;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: #333;
 }
 
 .logout-btn {
@@ -822,6 +905,11 @@ export default {
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
+.pictogram-card.suggested {
+  border-color: #00c8b3;
+  background: #f0fffc;
+}
+
 .pictogram-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 2px 6px rgba(0,0,0,0.08);
@@ -847,6 +935,37 @@ export default {
   border-radius: 8px;
   border: 1px solid #eee;
   padding: 4px;
+}
+
+.meta-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  background: #0a0c19;
+  color: #00c8b3;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.chip.alt {
+  background: #f2f7ff;
+  color: #0b1a1e;
+}
+
+.suggestions .score {
+  color: #0a0c19;
+  font-size: 11px;
 }
 .exit-button {
   margin-top: 20px;

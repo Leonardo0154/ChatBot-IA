@@ -18,14 +18,28 @@
       <div v-else>
         <p class="meta">Autor: {{ assignment.author }} · {{ formatDate(assignment.timestamp) }}</p>
         <p class="meta">Palabras: {{ assignment.words?.length || 0 }}</p>
+        <p class="meta" v-if="assignment.difficulty">Dificultad: {{ assignment.difficulty }}</p>
+        <p class="meta" v-if="assignment.target_students?.length">Destinatarios: {{ assignment.target_students.join(', ') }}</p>
 
         <div v-if="assignment.type === 'guided_session'" class="status info">
           Esta es una sesión guiada. Se inicia en segundo plano para que el asistente conduzca la práctica en el chat.
+        </div>
+        <div v-if="assignment.type === 'guided_session'" class="meta guided-meta">
+          <p v-if="assignment.objectives"><strong>Objetivos:</strong> {{ assignment.objectives }}</p>
+          <p v-if="assignment.duration_minutes"><strong>Duración:</strong> {{ assignment.duration_minutes }} min</p>
+          <p v-if="assignment.support_level"><strong>Apoyo visual:</strong> {{ assignment.support_level }}</p>
         </div>
 
         <div v-if="!canAnswer" class="status">Vista solo lectura para tu rol.</div>
 
         <div v-else>
+          <div class="progress-list" v-if="wordStatuses.length">
+            <div v-for="item in wordStatuses" :key="item.word" :class="['progress-chip', item.status]">
+              <span>{{ item.word }}</span>
+              <small>{{ labelStatus(item.status) }}</small>
+            </div>
+          </div>
+
           <div v-if="!completed" class="interactive">
             <p>Palabra {{ currentWordIndex + 1 }} de {{ assignment.words.length }}</p>
 
@@ -98,6 +112,17 @@ export default {
     pictogramKeyword() {
       if (!this.currentPictogram) return ''
       return this.currentPictogram.keywords?.[0]?.keyword || this.currentWord
+    },
+    wordStatuses() {
+      const words = this.assignment?.words || []
+      return words.map((word, idx) => {
+        const attempts = this.answers.filter((a) => a.word === word)
+        const last = attempts[attempts.length - 1]
+        if (last?.ok) return { word, status: 'done' }
+        if (attempts.length) return { word, status: 'retry' }
+        if (idx === this.currentWordIndex) return { word, status: 'current' }
+        return { word, status: 'pending' }
+      })
     }
   },
   async created() {
@@ -136,7 +161,7 @@ export default {
       const expected = this.currentWord.toLowerCase()
       const answer = this.currentAnswer.trim()
       const ok = answer.toLowerCase() === expected
-      this.answers.push({ word: this.currentWord, answer })
+      this.answers.push({ word: this.currentWord, answer, ok })
       this.feedback = { ok, message: ok ? '¡Correcto!' : 'Incorrecto. Intenta de nuevo.' }
       if (ok) {
         this.currentAnswer = ''
@@ -158,6 +183,18 @@ export default {
     formatDate(ts) {
       if (!ts) return 'Sin fecha'
       return new Date(ts).toLocaleDateString()
+    },
+    labelStatus(status) {
+      switch (status) {
+        case 'done':
+          return 'Listo'
+        case 'retry':
+          return 'Reintentar'
+        case 'current':
+          return 'Ahora'
+        default:
+          return 'Pendiente'
+      }
     },
     async startGuided() {
       try {
@@ -247,6 +284,14 @@ input[type="text"] {
   color: #0b6ba8;
 }
 
+.guided-meta {
+  margin: 8px 0;
+  padding: 8px;
+  background: #f2f7ff;
+  border-radius: 10px;
+  color: #0b1a1e;
+}
+
 .pictogram-preview {
   display: inline-flex;
   flex-direction: column;
@@ -265,6 +310,46 @@ input[type="text"] {
 }
 
 .pictogram-preview.missing {
+  background: #fff8f2;
+  border-color: #ffd6a5;
+  color: #b36b00;
+}
+
+.progress-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.progress-chip {
+  border: 1px solid #e6e8f0;
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: #fafbff;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.progress-chip small {
+  color: #4a4f5c;
+}
+
+.progress-chip.done {
+  background: #e8fff6;
+  border-color: #baf5e3;
+  color: #0c8b65;
+}
+
+.progress-chip.current {
+  background: #f2f7ff;
+  border-color: #cddffc;
+  color: #0b1a1e;
+}
+
+.progress-chip.retry {
   background: #fff8f2;
   border-color: #ffd6a5;
   color: #b36b00;
