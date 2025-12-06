@@ -1,0 +1,52 @@
+# Manual de usuario (ChatBot-IA)
+
+Guía práctica en español para usar el asistente con pictogramas.
+
+## Acceso y roles
+- **Ingreso:** abre `http://localhost:8000/` (o la URL desplegada). Usa "Registrar" para crear cuenta o "Iniciar sesión" si ya tienes credenciales.
+- **Roles:**
+  - **Estudiante / Niño:** practica pictos, responde asignaciones, usa el chat y el micrófono.
+  - **Docente / Terapeuta / Familia:** crean asignaciones/sesiones guiadas, revisan resultados, notas y reportes. No ejecutan tareas como estudiante.
+
+## Chat con pictogramas (vista "Chat")
+1) Escribe o pulsa el micrófono (navegador debe permitir audio). Di la frase y espera la transcripción.
+2) Pulsa pictogramas de la galería para añadir palabras; el asistente lee en voz alta si el sonido está activado.
+3) Envía. El asistente devuelve texto + pictogramas, etiqueta de intención y emoción.
+
+### Ejemplos de interacción
+- **Pedir práctica de pictos:**
+  - Usuario: "Quiero practicar animales".
+  - Bot: sugiere pictos de animales; muestra chips de intención `juego_cooperativo` y emoción detectada.
+- **Adivinanza guiada:**
+  - Usuario: "Dame una pista, es un animal grande con melena".
+  - Bot: responde con pista y pictograma sugerido (león) sin revelar la palabra.
+- **Chequeo emocional:**
+  - Usuario: "Estoy nervioso por la clase".
+  - Bot: reconoce emoción `ansioso` y responde con frase calmante y pictos relacionados.
+- **Autonomía diaria:**
+  - Usuario: "Cómo me lavo los dientes".
+  - Bot: genera pasos cortos con pictos (cepillo, pasta, enjuagar).
+
+## Asignaciones y sesiones guiadas
+- **Listar:** menú "Asignaciones". Los estudiantes ven tareas dirigidas a ellos; docentes ven las que crearon.
+- **Ejecutar (estudiante):**
+  1) Entra a una asignación.
+  2) Se muestra solo el pictograma y el progreso ("Palabra N"). No se revela la palabra.
+  3) Escribe la palabra y pulsa "Responder". Si aciertas, pasa a la siguiente; si no, puedes reintentar.
+- **Sesiones guiadas:** Igual flujo de asignación, pero al abrir se envía al backend para que el chat conduzca la práctica en segundo plano.
+
+## Juego de memoria
+- Acceso desde menú (si el rol es estudiante). Sirve para reforzar vocabulario y reconocimiento de pictos.
+
+## Notas y reportes (roles adultos)
+- **Notas compartidas:** en vistas de gestión, puedes crear/leer notas por estudiante.
+- **Reportes:** genera/exporta métricas desde el panel (JSON/CSV) para seguimiento.
+
+## Audio
+- **Micrófono (STT):** botón en el chat. Necesita HTTPS o `localhost` y permisos del navegador. Si falla, el botón muestra error y se desactiva visualmente.
+- **TTS local:** el frontend usa `speechSynthesis` del navegador; puedes silenciar con el toggle de sonido.
+
+## Buenas prácticas
+- Usa pictos sugeridos para acelerar la entrada.
+- Si el micrófono no responde, revisa que el sitio sea `https://` o `http://localhost` y que el navegador tenga permisos de audio.
+- En asignaciones, evita pronunciar la respuesta delante del estudiante: la UI no la muestra, solo el pictograma.
