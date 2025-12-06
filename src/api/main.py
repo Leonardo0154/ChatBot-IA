@@ -220,8 +220,9 @@ async def get_pictogram(path: str):
 @app.post("/process")
 
 async def process_sentence_endpoint(sentence: Sentence, current_user: schemas.User = Depends(auth.get_current_active_user)):
-
+    start = datetime.now().timestamp()
     chatbot_response = chatbot_logic.chatbot.process_sentence(current_user.username, sentence.text, current_user.role)
+    duration_ms = int((datetime.now().timestamp() - start) * 1000)
 
     data_manager.log_interaction(
         current_user.username,
@@ -230,7 +231,8 @@ async def process_sentence_endpoint(sentence: Sentence, current_user: schemas.Us
         intent=chatbot_response.get("intent"),
         emotion=chatbot_response.get("emotion"),
         suggested_pictograms=chatbot_response.get("suggested_pictograms"),
-        entities=chatbot_response.get("entities")
+        entities=chatbot_response.get("entities"),
+        response_time_ms=duration_ms
     )
 
     return {
@@ -485,8 +487,14 @@ async def family_summary(current_user: schemas.User = Depends(auth.get_current_a
 
 @app.get("/metrics")
 async def get_metrics(current_user: schemas.User = Depends(auth.get_current_active_user)):
-    if current_user.role in ["teacher", "therapist"]:
+    if current_user.role == "teacher":
         results = data_manager.get_assignment_results_for_author(current_user.username)
+        students = list({r.get('username') for r in results if r.get('username')})
+        return data_manager.build_metrics(students)
+
+    if current_user.role == "therapist":
+        # Therapists see a global view across all students/assignments.
+        results = data_manager.get_assignment_results()
         students = list({r.get('username') for r in results if r.get('username')})
         return data_manager.build_metrics(students)
 
@@ -561,9 +569,12 @@ async def create_assignment_result(result: AssignmentResult, current_user: schem
 
 @app.get("/assignment-results")
 async def list_assignment_results(current_user: schemas.User = Depends(auth.get_current_active_user)):
-    # Teachers/therapists see results for their assignments; parents see their students; students see their own.
-    if current_user.role in ["teacher", "therapist"]:
+    # Teachers see results for their assignments; therapists see all results; parents see their students; students see their own.
+    if current_user.role == "teacher":
         return data_manager.get_assignment_results_for_author(current_user.username)
+
+    if current_user.role == "therapist":
+        return data_manager.get_assignment_results()
 
     if current_user.role == "parent":
         students = current_user.students or []

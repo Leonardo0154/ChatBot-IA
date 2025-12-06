@@ -79,7 +79,8 @@ class Chatbot:
             "use_scripted": False,
             "drill_items": [],
             "drill_round": 0,
-            "drill_target": None
+            "drill_target": None,
+            "category": None
         }
 
     def _get_user_game_state(self, username: str):
@@ -116,16 +117,16 @@ class Chatbot:
             if not pictogram:
                 continue
             keywords = [kw.get('keyword') for kw in pictogram.get('keywords', []) if kw.get('keyword')]
-            extra = []
-            # Use ARASAAC tags as extra hints when keywords are few.
-            if len(keywords) < 3:
-                extra = pictogram.get('tags', [])
-            focus = (keywords + extra)[:4]
+            focus = list(dict.fromkeys(keywords))[:3]
             if not focus:
                 continue
-            text = f"{token.capitalize()} se asocia con {', '.join(focus)}. Dime cuál ves en tu pictograma."
+            text = f"{token.capitalize()} se relaciona con {', '.join(focus)}. Dime cuál ves en tu pictograma."
             return self._single_entry_response(text, pictogram.get('path'))
         return None
+
+    def _is_skip_request(self, sentence_lower: str) -> bool:
+        triggers = ["otro", "otra", "siguiente", "cambia", "muy dificil", "muy difícil", "no se", "no sé", "skip", "next"]
+        return any(t in sentence_lower for t in triggers)
 
     def _valid_pictogram(self, pictogram: dict) -> bool:
         if not pictogram or not pictogram.get('path'):
@@ -235,17 +236,43 @@ class Chatbot:
     def _package_response(self, processed_sentence, intent_info, emotion_info, suggested_pictograms=None, entities=None):
         intent_label, intent_score = intent_info
         emotion_label, emotion_score = emotion_info
+        # Defensive dedupe to avoid duplicated items in FE
+        seen_proc = set()
+        cleaned_proc = []
+        for item in processed_sentence or []:
+            key = f"{item.get('word')}|{item.get('pictogram')}"
+            if key in seen_proc:
+                continue
+            seen_proc.add(key)
+            cleaned_proc.append(item)
+        seen_sugg = set()
+        cleaned_sugg = []
+        for p in suggested_pictograms or []:
+            key = p.get('path') or p.get('keyword')
+            if key in seen_sugg:
+                continue
+            seen_sugg.add(key)
+            cleaned_sugg.append(p)
         return {
-            'processed_sentence': processed_sentence,
+            'processed_sentence': cleaned_proc,
             'intent': {'label': intent_label, 'score': intent_score},
             'emotion': {'label': emotion_label, 'score': emotion_score},
-            'suggested_pictograms': suggested_pictograms or [],
+            'suggested_pictograms': cleaned_sugg,
             'entities': entities or []
         }
 
     def _suggest_pictograms(self, sentence: str, top_k: int = 5):
         try:
-            return nlp_utils.suggest_pictograms(sentence, top_k=top_k)
+            raw = nlp_utils.suggest_pictograms(sentence, top_k=top_k)
+            seen = set()
+            deduped = []
+            for p in raw:
+                key = p.get('path') or p.get('keyword')
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(p)
+            return deduped
         except Exception:
             return []
 
@@ -467,6 +494,7 @@ class Chatbot:
         game_state["mode"] = "game"
         game_state["correct_answer"] = pictogram['keywords'][0]['keyword']
         game_state["pictogram_path"] = pictogram['path']
+        game_state["category"] = category
         game_state["assignment_metadata"] = {
             "type": "game",
             "task": f"Adivinar palabras de la categoría {category or 'general'}",
@@ -541,6 +569,27 @@ class Chatbot:
         entities = self._extract_entities(sentence)
 
         if game_state["in_progress"]:
+            # Allow user to skip/advance when the current card feels difícil
+            if self._is_skip_request(sentence_lower):
+                prev_category = game_state.get("category")
+                skip_entity = {
+                    'label': 'skip',
+                    'text': sentence,
+                    'mode': game_state.get('mode'),
+                    'pictogram': game_state.get('pictogram_path')
+                }
+                # Start a fresh card, preserving category when available
+                self.clear_user_game_state(username)
+                new_game = self.start_game(username, prev_category)
+                skip_text = "Marcado como difícil. Cambiamos de pictograma." if prev_category else "Cambiamos de pictograma."
+                combined = f"{skip_text} {new_game['text']}"
+                return self._package_response(
+                    self._single_entry_response(combined, new_game.get('pictogram')),
+                    intent_info,
+                    emotion_info,
+                    suggested_pictograms,
+                    entities=[skip_entity]
+                )
             if game_state["mode"] == "game":
                 semantic_guess = self._semantic_card_match(sentence_lower)
                 correct = game_state["correct_answer"].lower()

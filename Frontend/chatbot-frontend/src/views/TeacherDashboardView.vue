@@ -2,17 +2,19 @@
   <div class="page">
     <header class="page-header">
       <div>
-        <h1>Panel docente</h1>
-        <p class="sub">Crea y monitorea asignaciones o sesiones guiadas.</p>
+        <h1>{{ isTherapist ? 'Panel terapeuta' : 'Panel docente' }}</h1>
+        <p class="sub" v-if="!isTherapist">Crea y monitorea asignaciones o sesiones guiadas.</p>
+        <p class="sub" v-else>Enfócate en progreso del estudiante: tiempo, temas y observaciones clínicas.</p>
       </div>
       <div class="actions">
+        <button class="icon-circle" @click="openHelp" title="Ayuda">?</button>
         <router-link class="btn" to="/assignments">Ver asignaciones</router-link>
         <button class="btn" @click="logout">Salir</button>
       </div>
     </header>
 
     <section class="card">
-      <h3>Nueva asignación</h3>
+      <h3>{{ isTherapist ? 'Plan / registro de práctica' : 'Nueva asignación' }}</h3>
       <form class="form" @submit.prevent="submit">
         <label>
           Título
@@ -65,13 +67,13 @@
         </label>
         <button class="btn" type="submit" :disabled="loading">{{ loading ? 'Guardando...' : 'Guardar' }}</button>
         <p class="status error" v-if="error">{{ error }}</p>
-        <p class="status success" v-if="success">Asignación guardada.</p>
+        <p class="status success" v-if="success">{{ isTherapist ? 'Plan guardado.' : 'Asignación guardada.' }}</p>
       </form>
     </section>
 
     <section class="card">
       <div class="card-head">
-        <h3>Asignaciones creadas por ti</h3>
+        <h3>{{ isTherapist ? 'Planes/actividades creadas por ti' : 'Asignaciones creadas por ti' }}</h3>
         <button class="btn" @click="loadAssignments" :disabled="loading">Refrescar</button>
       </div>
       <div v-if="loading" class="status">Cargando...</div>
@@ -99,7 +101,7 @@
 
     <section class="card">
       <div class="card-head">
-        <h3>Entregas de estudiantes</h3>
+        <h3>{{ isTherapist ? 'Ejecuciones y respuestas del estudiante' : 'Entregas de estudiantes' }}</h3>
         <button class="btn" @click="loadResults" :disabled="loading">Refrescar</button>
       </div>
       <div v-if="loading" class="status">Cargando...</div>
@@ -118,7 +120,7 @@
 
     <section class="card">
       <div class="card-head">
-        <h3>Métricas</h3>
+        <h3>{{ isTherapist ? 'Métricas de progreso' : 'Métricas' }}</h3>
         <button class="btn" @click="loadMetrics" :disabled="loading">Refrescar</button>
       </div>
       <div v-if="loading" class="status">Cargando...</div>
@@ -126,7 +128,7 @@
       <div v-else>
         <div class="summary-row">
           <div class="stat">
-            <strong>Intentos</strong>
+            <strong>{{ isTherapist ? 'Intentos totales' : 'Intentos' }}</strong>
             <span>{{ metrics.total_attempts || 0 }}</span>
           </div>
           <div class="stat">
@@ -134,12 +136,16 @@
             <span>{{ metrics.total_correct || 0 }}</span>
           </div>
           <div class="stat">
-            <strong>Precisión</strong>
+            <strong>{{ isTherapist ? 'Precisión en tareas' : 'Precisión' }}</strong>
             <span>{{ formatPercent(metrics.overall_accuracy) }}</span>
           </div>
           <div class="stat">
             <strong>Eventos</strong>
             <span>{{ metrics.log_events || 0 }}</span>
+          </div>
+          <div class="stat" v-if="isTherapist">
+            <strong>Tiempo medio de respuesta</strong>
+            <span>{{ formatSeconds(metrics.avg_response_ms) }}</span>
           </div>
         </div>
         <p class="meta" v-if="metrics.last_activity">Última actividad: {{ formatDate(metrics.last_activity) }}</p>
@@ -179,6 +185,16 @@
             </ul>
             <p class="meta small">Longitud media de mensaje: {{ metrics.avg_tokens?.toFixed ? metrics.avg_tokens.toFixed(1) : metrics.avg_tokens }}</p>
             <p class="meta small">Pictogramas en respuestas: {{ metrics.pictogram_hits || 0 }}</p>
+            <p class="meta small" v-if="metrics.avg_response_ms">Tiempo medio de respuesta: {{ formatSeconds(metrics.avg_response_ms) }}</p>
+          </div>
+          <div class="result" v-if="isTherapist && metrics.per_student?.length">
+            <p class="meta"><strong>Vista por estudiante</strong></p>
+            <ul class="mini-list">
+              <li v-for="s in metrics.per_student" :key="s.username">
+                <span>{{ s.username }} · {{ s.interactions }} interacciones · {{ s.last_interaction ? formatDate(s.last_interaction) : 'sin actividad' }}</span>
+                <span class="pill">{{ formatSeconds(s.avg_response_ms) }}</span>
+              </li>
+            </ul>
           </div>
         </div>
       </div>
@@ -186,14 +202,14 @@
 
     <section class="card">
       <div class="card-head">
-        <h3>Observaciones compartidas</h3>
+        <h3>{{ isTherapist ? 'Observaciones / comunicación' : 'Observaciones compartidas' }}</h3>
         <button class="btn" @click="loadObservations" :disabled="loading">Refrescar</button>
       </div>
       <form class="form" @submit.prevent="submitObservation">
         <label>Estudiante</label>
         <input v-model="observationStudent" type="text" placeholder="username del estudiante" required />
         <label>Observación</label>
-        <textarea v-model="observationText" rows="2" required></textarea>
+        <textarea v-model="observationText" rows="2" required placeholder="Comparte notas para docentes, terapeutas o familia"></textarea>
         <button class="btn" type="submit" :disabled="loading || !observationText">Guardar</button>
       </form>
       <div v-if="observationsError" class="status error">{{ observationsError }}</div>
@@ -205,6 +221,36 @@
         </div>
       </div>
     </section>
+
+    <div v-if="showHelp" class="help-modal">
+      <div class="help-content">
+        <header class="help-header">
+          <h3>Guía rápida</h3>
+          <button class="icon-circle" @click="showHelp = false" title="Cerrar">×</button>
+        </header>
+        <div class="help-body">
+          <template v-if="isTherapist">
+            <p><strong>Para terapeutas:</strong> visión global de estudiantes, tiempos y observaciones.</p>
+            <ul>
+              <li>Usa "Asignaciones" para planes y actividades clínicas.</li>
+              <li>Revisa métricas: tiempos de respuesta, emociones e intenciones por estudiante.</li>
+              <li>Registra observaciones y notas compartidas para docentes y familia.</li>
+              <li>Refresca métricas y entregas con los botones "Refrescar".</li>
+            </ul>
+          </template>
+          <template v-else>
+            <p><strong>Para docentes:</strong> crea tareas, sesiones guiadas y revisa progreso.</p>
+            <ul>
+              <li>"Asignaciones": define título, tarea, palabras objetivo y destinatarios.</li>
+              <li>"Sesión guiada": agrega objetivos, duración y nivel de apoyo visual.</li>
+              <li>"Entregas": revisa respuestas de estudiantes y tiempos.</li>
+              <li>"Métricas": precisión, emociones detectadas y completions.</li>
+              <li>"Observaciones": comparte notas con terapeuta y familia.</li>
+            </ul>
+          </template>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -242,10 +288,15 @@ export default {
       observations: [],
       observationsError: '',
       observationStudent: '',
-      observationText: ''
+      observationText: '',
+      showHelp: false
     }
   },
   computed: {
+    isTherapist() {
+      const role = (this.session?.user?.role || '').toString().toLowerCase()
+      return role.includes('therap') || role.includes('terape')
+    },
     ownAssignments() {
       const author = this.session?.user?.username
       return this.assignments.filter((a) => a.author === author)
@@ -272,6 +323,9 @@ export default {
     this.loadObservations()
   },
   methods: {
+    openHelp() {
+      this.showHelp = true
+    },
     async logout() {
       try {
         if (this.session?.token) {
@@ -393,6 +447,10 @@ export default {
     formatPercent(value) {
       if (value === undefined || value === null) return '0%'
       return `${Math.round(value * 100)}%`
+    },
+    formatSeconds(ms) {
+      if (!ms && ms !== 0) return 's/d'
+      return `${(ms / 1000).toFixed(1)}s`
     }
   }
 }
@@ -411,6 +469,27 @@ export default {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+}
+
+.icon-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid #d7d9e4;
+  background: #fff;
+  color: #0a0c19;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  cursor: pointer;
+  margin-right: 8px;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.icon-circle:hover {
+  background: #f3f4f8;
+  transform: scale(1.05);
 }
 
 .sub {
@@ -582,5 +661,44 @@ input, textarea, select {
   padding: 2px 8px;
   border-radius: 999px;
   font-weight: 600;
+}
+
+.help-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.help-content {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  width: min(420px, 90vw);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+}
+
+.help-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.help-body p {
+  margin: 4px 0 8px;
+}
+
+.help-body ul {
+  padding-left: 16px;
+  margin: 0 0 8px;
+}
+
+.help-body li {
+  margin-bottom: 4px;
+  font-size: 14px;
 }
 </style>

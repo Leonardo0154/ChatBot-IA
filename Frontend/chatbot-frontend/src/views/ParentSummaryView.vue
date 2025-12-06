@@ -6,6 +6,7 @@
         <p class="sub">Visión general de interacciones y asignaciones de tus hijos.</p>
       </div>
       <div class="actions">
+        <button class="icon-circle" @click="openHelp" title="Ayuda">?</button>
         <button class="btn" @click="logout">Salir</button>
         <button class="btn" @click="loadSummary">Refrescar resumen</button>
       </div>
@@ -110,6 +111,25 @@
         </div>
       </div>
     </section>
+
+    <div v-if="showHelp" class="help-modal">
+      <div class="help-content">
+        <header class="help-header">
+          <h3>Guía rápida</h3>
+          <button class="icon-circle" @click="showHelp = false" title="Cerrar">×</button>
+        </header>
+        <div class="help-body">
+          <p><strong>Familia:</strong> revisa progreso y notas compartidas.</p>
+          <ul>
+            <li>Resumen familiar: actividad reciente, interacciones y asignaciones.</li>
+            <li>Métricas diarias: palabras practicadas, precisión y mensajes recientes.</li>
+            <li>Notas de docentes/terapeutas: observa recomendaciones y hallazgos.</li>
+            <li>Alertas: consulta recordatorios o riesgos detectados.</li>
+            <li>Refresca con los botones "Refrescar" o "Resumen diario" cuando lo necesites.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -132,7 +152,8 @@ export default {
       copyStatus: '',
       alerts: [],
       alertsError: '',
-      runningAlerts: false
+      runningAlerts: false,
+      showHelp: false
     }
   },
   created() {
@@ -144,6 +165,9 @@ export default {
     this.loadAll()
   },
   methods: {
+    openHelp() {
+      this.showHelp = true
+    },
     async logout() {
       try {
         if (this.session?.token) {
@@ -278,6 +302,27 @@ export default {
   margin-bottom: 12px;
 }
 
+.icon-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid #d7d9e4;
+  background: #fff;
+  color: #0a0c19;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  cursor: pointer;
+  margin-right: 8px;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.icon-circle:hover {
+  background: #f3f4f8;
+  transform: scale(1.05);
+}
+
 .sub {
   margin: 4px 0 0;
   color: #4a4f5c;
@@ -368,6 +413,45 @@ li:last-child {
 
 .text {
   flex: 1;
+
+.help-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.help-content {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  width: min(420px, 90vw);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+}
+
+.help-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.help-body p {
+  margin: 4px 0 8px;
+}
+
+.help-body ul {
+  padding-left: 16px;
+  margin: 0 0 8px;
+}
+
+.help-body li {
+  margin-bottom: 4px;
+  font-size: 14px;
+}
 }
 
 .tag {

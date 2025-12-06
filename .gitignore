@@ -40,5 +40,13 @@ rclone_downloads.html
 .vscode/
 .idea/
 
+# Project data (keep only templates in repo)
+data/assignments.json
+data/assignment_results.json
+data/processed/
+data/raw/
+data/models/
+data-backup-*/
+
 # OS files
 .DS_Store

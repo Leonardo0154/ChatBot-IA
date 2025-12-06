@@ -217,7 +217,7 @@ DEFAULT_SUPPORT_CONTENT = {
     ]
 }
 
-def log_interaction(username, sentence, processed_sentence, intent=None, emotion=None, suggested_pictograms=None, entities=None):
+def log_interaction(username, sentence, processed_sentence, intent=None, emotion=None, suggested_pictograms=None, entities=None, response_time_ms=None):
     """Logs the user's sentence and the processed pictograms to a JSON file."""
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     log_entry = {
@@ -228,7 +228,8 @@ def log_interaction(username, sentence, processed_sentence, intent=None, emotion
         'intent': intent,
         'emotion': emotion,
         'suggested_pictograms': suggested_pictograms,
-        'entities': entities
+        'entities': entities,
+        'response_time_ms': response_time_ms
     }
     try:
         with open(LOG_FILE, 'a', encoding='utf-8') as f:
@@ -415,6 +416,30 @@ def build_metrics(usernames):
     completions = [{'assignment_id': k, 'count': v} for k, v in assignment_counts.items()]
 
     intent_emotion_stats = aggregate_intents_emotions(usernames)
+
+    # Per-student interaction summaries
+    per_student = []
+    for user in usernames:
+        ulogs = get_usage_logs_for_users([user], limit=2000)
+        if not ulogs:
+            per_student.append({
+                'username': user,
+                'interactions': 0,
+                'last_interaction': None,
+                'avg_response_ms': 0.0,
+                'avg_tokens': 0.0
+            })
+            continue
+        rt_list = [log.get('response_time_ms') for log in ulogs if isinstance(log.get('response_time_ms'), (int, float))]
+        token_list = [len((log.get('sentence') or '').split()) for log in ulogs if log.get('sentence')]
+        last_ts = max(log.get('timestamp') for log in ulogs if log.get('timestamp'))
+        per_student.append({
+            'username': user,
+            'interactions': len(ulogs),
+            'last_interaction': last_ts,
+            'avg_response_ms': (sum(rt_list) / len(rt_list)) if rt_list else 0.0,
+            'avg_tokens': (sum(token_list) / len(token_list)) if token_list else 0.0
+        })
     return {
         'per_word': per_word,
         'completions': completions,
@@ -428,7 +453,9 @@ def build_metrics(usernames):
         'pictogram_hits': intent_emotion_stats.get('pictogram_hits', 0),
         'top_intents': intent_emotion_stats.get('top_intents', []),
         'top_emotions': intent_emotion_stats.get('top_emotions', []),
-        'log_events': intent_emotion_stats.get('total_logs', 0)
+        'log_events': intent_emotion_stats.get('total_logs', 0),
+        'avg_response_ms': intent_emotion_stats.get('avg_response_ms', 0.0),
+        'per_student': per_student
     }
 
 
@@ -531,6 +558,7 @@ def aggregate_intents_emotions(usernames):
     emotion_counts = {}
     token_lengths = []
     pictogram_hits = 0
+    response_times = []
     for log in logs:
         intent = (log.get('intent') or {}).get('label')
         emotion = (log.get('emotion') or {}).get('label')
@@ -546,8 +574,12 @@ def aggregate_intents_emotions(usernames):
         for entry in processed:
             if entry.get('pictogram'):
                 pictogram_hits += 1
+        rt = log.get('response_time_ms')
+        if isinstance(rt, (int, float)):
+            response_times.append(rt)
 
     avg_tokens = sum(token_lengths) / len(token_lengths) if token_lengths else 0.0
+    avg_response_ms = sum(response_times) / len(response_times) if response_times else 0.0
     top_intents = sorted(intent_counts.items(), key=lambda x: -x[1])[:5]
     top_emotions = sorted(emotion_counts.items(), key=lambda x: -x[1])[:5]
     return {
@@ -557,7 +589,8 @@ def aggregate_intents_emotions(usernames):
         'top_emotions': top_emotions,
         'avg_tokens': avg_tokens,
         'pictogram_hits': pictogram_hits,
-        'total_logs': len(logs)
+        'total_logs': len(logs),
+        'avg_response_ms': avg_response_ms
     }
 
 

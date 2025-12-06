@@ -8,6 +8,40 @@ Para obtener información detallada sobre la configuración del proyecto, la arq
 
 ### **[Ver Documentación Completa](../docs/README.md)**
 
+### Estructura de frontends
+- **SPA oficial (Vite + Vue 3):** `Frontend/chatbot-frontend/` es la aplicación que se construye y sirve en producción. Usa `npm run dev` para desarrollo y `npm run build` para generar `dist/`, que el backend expone en `/static`.
+- **Frontend estático legacy:** `src/app/chatbot-frontend/` es un set de HTML/JS plano usado como prototipo temprano. No se sirve en producción; se conserva solo como referencia histórica.
+
+### Arranque rápido local
+Backend (Windows / PowerShell):
+```pwsh
+cd ChatBot-IA
+python -m venv venv
+./venv/Scripts/Activate.ps1
+pip install -r requirements.txt  # incluye el modelo es_core_news_sm
+uvicorn src.api.main:app --reload
+```
+
+Frontend (Vite + Vue 3):
+```pwsh
+cd Frontend/chatbot-frontend
+cp .env.example .env   # ajusta VITE_API_BASE_URL si la API no está en localhost:8000
+npm install
+npm run dev
+```
+
+Para producción: `npm run build` y el backend servirá `Frontend/chatbot-frontend/dist` bajo `/static` al levantar Uvicorn.
+
+Limpieza opcional antes de publicar: `pwsh -File scripts/reset_data.ps1` crea un backup con fecha y vacía datos de usuarios, tareas, resultados y logs para evitar subir información sensible.
+
+#### Nota sobre PyTorch en Windows
+Si `pip install -r requirements.txt` falla al resolver `torch`, instala una rueda CPU explícita y repite la instalación del resto:
+```pwsh
+pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt --no-deps
+```
+El requisito de `es_core_news_sm` ya está incluido en el archivo `requirements.txt`, por lo que no se necesita un paso separado.
+
 ---
 
 ###  Objetivos Generales

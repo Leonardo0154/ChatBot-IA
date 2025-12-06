@@ -41,6 +41,7 @@
         <h2>Chat With AI</h2>
 
         <div class="topbar-actions">
+          <button class="icon-circle" @click="openHelp" title="Ayuda">?</button>
           <label class="toggle">
             <input type="checkbox" v-model="ttsEnabled" />
             <span>Sonido</span>
@@ -178,6 +179,52 @@
 
       </div>
     </main>
+    <div v-if="showHelp" class="help-modal">
+      <div class="help-content">
+        <header class="help-header">
+          <h3>Guía rápida</h3>
+          <button class="icon-circle" @click="showHelp = false" title="Cerrar">×</button>
+        </header>
+        <div class="help-body">
+          <template v-if="role === 'child' || role === 'student'">
+            <p><strong>¿Qué puedes hacer?</strong> Practicar pictos, jugar memoria, decir cómo te sientes y pedir ayuda.</p>
+            <ul>
+              <li>Di "practicar pictos de animales" para empezar un juego con pictos.</li>
+              <li>Di "juego de memoria" para abrir el memorama.</li>
+              <li>Di "estoy triste/enojado" para recibir apoyo emocional.</li>
+              <li>Usa los pictos sugeridos tocándolos.</li>
+            </ul>
+          </template>
+          <template v-else-if="role === 'teacher'">
+            <p><strong>Docente:</strong> crea asignaciones y sesiones guiadas; revisa entregas y métricas.</p>
+            <ul>
+              <li>Ve a "Asignaciones" para crear tareas o sesiones guiadas.</li>
+              <li>Abre "Sesión guiada" para lanzar prácticas que el chat conducirá.</li>
+              <li>Consulta métricas y observaciones en el panel docente.</li>
+            </ul>
+          </template>
+          <template v-else-if="role === 'therapist'">
+            <p><strong>Terapeuta:</strong> observa progreso global, tiempos de respuesta y comparte observaciones.</p>
+            <ul>
+              <li>Panel terapeuta: métricas por estudiante, tiempos de respuesta y emociones.</li>
+              <li>Ve "Asignaciones" para planes/actividades y notas compartidas.</li>
+              <li>Usa observaciones para comunicar hallazgos con docentes/familia.</li>
+            </ul>
+          </template>
+          <template v-else-if="role === 'parent'">
+            <p><strong>Familia:</strong> revisa progreso y observa cómo practica tu hijo.</p>
+            <ul>
+              <li>Revisa asignaciones y sesiones guiadas completadas.</li>
+              <li>Lee observaciones compartidas por docentes/terapeutas.</li>
+              <li>Puedes iniciar el chat para practicar pictos junto al niño.</li>
+            </ul>
+          </template>
+          <template v-else>
+            <p>Usa el chat para practicar pictos o abrir el juego de memoria.</p>
+          </template>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -232,13 +279,17 @@ export default {
         mic: micIcon,
         send: sendIcon,
         welcome: welcomeIcon
-      }
+      },
+      showHelp: false
     };
   },
   computed: {
     roleLabel() {
       if (!this.user?.role) return "Sin rol asignado";
       return ROLE_LABELS[this.user.role] || this.user.role;
+    },
+    role() {
+      return this.user?.role;
     },
     menuItems() {
       const role = this.user?.role;
@@ -277,6 +328,9 @@ export default {
     this.initSpeech();
   },
   methods: {
+    openHelp() {
+      this.showHelp = true;
+    },
     async sendMessage() {
       if (!this.token) {
         this.handleAuthExpiration();
@@ -293,18 +347,19 @@ export default {
 
       try {
         const response = await processSentence(this.token, userText);
-        const botText = (response.processed_sentence || [])
+        const cleanProcessed = this.dedupeProcessed(response.processed_sentence || []);
+        const botText = cleanProcessed
           .map(item => item.word)
           .join(" ")
           .trim();
         this.lastIntent = response.intent;
         this.lastEmotion = response.emotion;
-        this.suggestedPictos = response.suggested_pictograms || [];
+        this.suggestedPictos = this.dedupePictos(response.suggested_pictograms || []);
         this.chat.push({
           text:
             botText || "No tengo una respuesta ahora mismo, pero sigamos practicando.",
           from: "bot",
-          pictograms: response.processed_sentence,
+          pictograms: cleanProcessed,
           intent: response.intent,
           emotion: response.emotion
         });
@@ -443,6 +498,28 @@ export default {
     formatScore(score) {
       if (score === undefined || score === null) return '';
       return `${Math.round(score * 100)}%`;
+    },
+    dedupePictos(pictos) {
+      const seen = new Set();
+      const out = [];
+      for (const p of pictos) {
+        const key = `${p.path || ''}|${p.keyword || ''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(p);
+      }
+      return out;
+    },
+    dedupeProcessed(items) {
+      const seen = new Set();
+      const out = [];
+      for (const item of items) {
+        const key = `${item.word || ''}|${item.pictogram || ''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(item);
+      }
+      return out;
     }
   }
 };
@@ -566,6 +643,26 @@ export default {
 .topbar-actions {
   display: flex;
   gap: 15px;
+}
+
+.icon-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid #d7d9e4;
+  background: #fff;
+  color: #0a0c19;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.icon-circle:hover {
+  background: #f3f4f8;
+  transform: scale(1.05);
 }
 
 .toggle {
@@ -885,8 +982,8 @@ export default {
 
 .pictogram-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
   max-height: 600px;
   overflow-y: auto;
   padding-right: 4px;
@@ -896,11 +993,11 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   background: #f7f8fc;
   border: 1px solid #e5e5e5;
   border-radius: 10px;
-  padding: 6px;
+  padding: 10px;
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
@@ -916,8 +1013,8 @@ export default {
 }
 
 .pictogram-card img {
-  width: 60px;
-  height: 60px;
+  width: 90px;
+  height: 90px;
   object-fit: contain;
 }
 
@@ -928,13 +1025,13 @@ export default {
 }
 
 .pictogram-row img {
-  width: 38px;
-  height: 38px;
+  width: 48px;
+  height: 48px;
   object-fit: contain;
   background: #fff;
   border-radius: 8px;
   border: 1px solid #eee;
-  padding: 4px;
+  padding: 6px;
 }
 
 .meta-tags {
@@ -981,6 +1078,45 @@ export default {
 
 .exit-button:hover {
   background: #009b88;
+}
+
+.help-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.help-content {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  width: min(420px, 90vw);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+}
+
+.help-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.help-body p {
+  margin: 4px 0 8px;
+}
+
+.help-body ul {
+  padding-left: 16px;
+  margin: 0 0 8px;
+}
+
+.help-body li {
+  margin-bottom: 4px;
+  font-size: 14px;
 }
 
 
