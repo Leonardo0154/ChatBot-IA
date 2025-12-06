@@ -1,15 +1,22 @@
 <template>
   <div class="auth-bg">
     <div class="auth-card">
+      <div class="header-with-btn">
+        <h1 class="title">Crear cuenta</h1>
+        <button class="btn-change-role" @click="changeRole" title="Cambiar rol">
+          ↻ Cambiar rol
+        </button>
+      </div>
+
+      <div class="selected-role">
+        <span>Rol seleccionado: <strong>{{ roleLabel }}</strong></span>
+      </div>
 
       <div class="profile-icon">
         <img src="../assets/14.png" alt="profile" />
       </div>
 
-      <h1 class="title">Crear cuenta</h1>
-
       <form @submit.prevent="register" class="form">
-
         <div class="input-group">
           <img class="icon" src="../assets/person.png" alt="">
           <input
@@ -21,22 +28,12 @@
           />
         </div>
 
-        <div class="input-group">
-          <img class="icon" src="../assets/email.png" alt="">
-          <select v-model="role" required>
-            <option value="child">Estudiante / Niño</option>
-            <option value="parent">Padre / Madre</option>
-            <option value="teacher">Docente</option>
-            <option value="therapist">Terapeuta</option>
-          </select>
-        </div>
-
         <div class="input-group" v-if="role !== 'child'">
           <img class="icon" src="../assets/person.png" alt="">
           <input
             type="text"
             v-model="studentsRaw"
-            placeholder="Estudiantes vinculados (coma)"
+            placeholder="Estudiantes vinculados (coma separados)"
           />
         </div>
 
@@ -62,11 +59,9 @@
         ¿Ya tienes cuenta?
         <router-link to="/login">Inicia sesión</router-link>
       </p>
-
     </div>
   </div>
 </template>
-
 
 <script>
 import { registerUser } from "@/services/api";
@@ -84,7 +79,33 @@ export default {
       successMessage: ""
     }
   },
+  computed: {
+    roleLabel() {
+      const labels = {
+        child: "Estudiante / Niño",
+        parent: "Padre / Madre",
+        teacher: "Docente",
+        therapist: "Terapeuta"
+      }
+      return labels[this.role] || this.role
+    }
+  },
+  mounted() {
+    // Leer el rol desde localStorage
+    const selectedRole = localStorage.getItem('selectedRole')
+    if (selectedRole) {
+      this.role = selectedRole
+    } else {
+      // Si no hay rol, redirigir a selección
+      this.$router.push('/register')
+    }
+  },
   methods: {
+    changeRole() {
+      // Limpiar el rol guardado y volver a RoleSelect
+      localStorage.removeItem('selectedRole')
+      this.$router.push('/register')
+    },
     async register() {
       if (this.loading) return
       this.errorMessage = ""
@@ -109,6 +130,7 @@ export default {
           students: this.role === 'child' ? undefined : students
         })
         this.successMessage = 'Cuenta creada correctamente. Ahora puedes iniciar sesión.'
+        localStorage.removeItem('selectedRole')
         setTimeout(() => this.$router.push('/login'), 1200)
       } catch (error) {
         this.errorMessage = error?.message || 'No se pudo crear la cuenta.'
@@ -119,7 +141,6 @@ export default {
   }
 }
 </script>
-
 
 <style scoped>
 .auth-bg {
@@ -140,17 +161,58 @@ export default {
   position: relative;
 }
 
-.profile-icon img {
-  width: 15%;
-  border-radius: 50%;
-  object-fit: cover;
-  margin: 0 auto 10px;
+.header-with-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
 }
 
 .title {
   font-size: 34px;
   font-weight: 600;
-  margin-bottom: 30px;
+  margin: 0;
+  margin-left: 100px;
+  flex: 1;
+}
+
+.btn-change-role {
+  background: #00C8B3;
+  color: #fff;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: 0.2s;
+  white-space: nowrap;
+}
+
+.btn-change-role:hover {
+  background: #00a894;
+}
+
+.selected-role {
+  background: #f0f8f7;
+  border: 1px solid #00C8B3;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 15px;
+  font-size: 13px;
+  color: #0A0C19;
+}
+
+.selected-role strong {
+  color: #00C8B3;
+  font-weight: 600;
+}
+
+.profile-icon img {
+  width: 15%;
+  border-radius: 50%;
+  object-fit: cover;
+  margin: 10px auto;
 }
 
 .form {
@@ -175,34 +237,9 @@ export default {
   font-size: 15px;
 }
 
-.input-group select {
-  width: 100%;
-  border: none;
-  outline: none;
-  font-size: 15px;
-  background: transparent;
-}
-
 .icon {
   margin-right: 10px;
   font-size: 18px;
-}
-
-.toggle {
-  margin-left: 10px;
-  cursor: pointer;
-}
-
-.options {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-  margin-bottom: 18px;
-}
-
-.options .forgot {
-  color: #00C8B3;
-  text-decoration: none;
 }
 
 .btn-login {
@@ -215,6 +252,7 @@ export default {
   border: none;
   cursor: pointer;
   transition: 0.2s;
+  margin-top: 10px;
 }
 
 .btn-login:hover {
@@ -228,6 +266,7 @@ export default {
 
 .bottom-text {
   margin-top: 25px;
+  font-size: 14px;
 }
 
 .bottom-text a {
@@ -239,11 +278,12 @@ export default {
 .error {
   color: #e63946;
   margin-top: 15px;
+  font-size: 13px;
 }
 
 .success {
   color: #0f9d58;
   margin-top: 15px;
+  font-size: 13px;
 }
-
 </style>

@@ -1,13 +1,15 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
+import RoleSelect from '../views/RoleSelect.vue'
 import ChatbotView from '../views/ChatbotView.vue'
 import { getSession } from '@/services/session'
 
 const routes = [
   { path: '/', redirect: '/login' },
   { path: '/login', name: 'login', component: LoginView },
-  { path: '/register', name: 'register', component: RegisterView },
+  { path: '/register', name: 'register', component: RoleSelect },
+  { path: '/register-form', name: 'registerForm', component: RegisterView },
   { path: '/chat', name: 'chat', component: ChatbotView, meta: { requiresAuth: true } }
 ]
 
@@ -22,7 +24,7 @@ router.beforeEach((to, from, next) => {
     next({ name: 'login', query: { redirect: to.fullPath } })
     return
   }
-  if ((to.name === 'login' || to.name === 'register') && session) {
+  if ((to.name === 'login' || to.name === 'register' || to.name === 'registerForm') && session) {
     next({ name: 'chat' })
     return
   }
