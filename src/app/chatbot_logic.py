@@ -128,6 +128,10 @@ class Chatbot:
         triggers = ["otro", "otra", "siguiente", "cambia", "muy dificil", "muy difícil", "no se", "no sé", "skip", "next"]
         return any(t in sentence_lower for t in triggers)
 
+    def _is_exit_request(self, sentence_lower: str) -> bool:
+        triggers = ["salir", "terminar", "basta", "cancelar", "detener", "stop", "parar"]
+        return any(t in sentence_lower for t in triggers)
+
     def _valid_pictogram(self, pictogram: dict) -> bool:
         if not pictogram or not pictogram.get('path'):
             return False
@@ -569,6 +573,12 @@ class Chatbot:
         entities = self._extract_entities(sentence)
 
         if game_state["in_progress"]:
+            # Allow user to exit any game mode explicitly
+            if self._is_exit_request(sentence_lower):
+                mode = game_state.get("mode") or "juego"
+                self.clear_user_game_state(username)
+                exit_text = f"Salimos del {mode}. Dime otra cosa que quieras practicar."
+                return self._package_response(self._single_entry_response(exit_text), intent_info, emotion_info, suggested_pictograms, entities)
             # Allow user to skip/advance when the current card feels difícil
             if self._is_skip_request(sentence_lower):
                 prev_category = game_state.get("category")

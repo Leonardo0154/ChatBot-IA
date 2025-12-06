@@ -35,7 +35,7 @@
         <div v-else>
           <div class="progress-list" v-if="wordStatuses.length">
             <div v-for="item in wordStatuses" :key="item.word" :class="['progress-chip', item.status]">
-              <span>{{ item.word }}</span>
+              <span>{{ labelWord(item.idx) }}</span>
               <small>{{ labelStatus(item.status) }}</small>
             </div>
           </div>
@@ -45,7 +45,7 @@
 
             <div class="pictogram-preview" v-if="currentPictogram">
               <img :src="currentPictogramUrl" :alt="currentWord" />
-              <small>{{ pictogramKeyword }}</small>
+              <small>Adivina la palabra</small>
             </div>
             <div class="pictogram-preview missing" v-else>
               <p>No se encontró pictograma para esta palabra.</p>
@@ -118,10 +118,10 @@ export default {
       return words.map((word, idx) => {
         const attempts = this.answers.filter((a) => a.word === word)
         const last = attempts[attempts.length - 1]
-        if (last?.ok) return { word, status: 'done' }
-        if (attempts.length) return { word, status: 'retry' }
-        if (idx === this.currentWordIndex) return { word, status: 'current' }
-        return { word, status: 'pending' }
+        if (last?.ok) return { idx, status: 'done' }
+        if (attempts.length) return { idx, status: 'retry' }
+        if (idx === this.currentWordIndex) return { idx, status: 'current' }
+        return { idx, status: 'pending' }
       })
     }
   },
@@ -179,6 +179,9 @@ export default {
       } catch (err) {
         this.error = err?.message || 'No se pudieron guardar los resultados.'
       }
+    },
+    labelWord(idx) {
+      return `Palabra ${idx + 1}`
     },
     formatDate(ts) {
       if (!ts) return 'Sin fecha'
