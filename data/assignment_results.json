@@ -17,5 +17,62 @@
                 "answer": "te"
             }
         ]
+    },
+    {
+        "timestamp": "2025-12-05T18:23:22.457158",
+        "username": "student1",
+        "assignment_id": "2025-11-22T15:25:09.182044",
+        "answers": [
+            {
+                "word": "pene",
+                "answer": "pene"
+            },
+            {
+                "word": "chupar",
+                "answer": "chupar"
+            },
+            {
+                "word": "tetas",
+                "answer": "tetas"
+            }
+        ]
+    },
+    {
+        "timestamp": "2025-12-05T21:15:53.857938",
+        "username": "student1",
+        "assignment_id": "2025-11-22T15:25:09.182044",
+        "answers": [
+            {
+                "word": "pene",
+                "answer": "pene"
+            },
+            {
+                "word": "chupar",
+                "answer": "chupar"
+            },
+            {
+                "word": "tetas",
+                "answer": "tetas"
+            }
+        ]
+    },
+    {
+        "timestamp": "2025-12-05T21:21:50.309648",
+        "username": "student1",
+        "assignment_id": "2025-11-22T17:39:13.917650",
+        "answers": [
+            {
+                "word": "carrera",
+                "answer": "carrera"
+            },
+            {
+                "word": "carro",
+                "answer": "carro"
+            },
+            {
+                "word": "limosina",
+                "answer": "limosina"
+            }
+        ]
     }
 ]

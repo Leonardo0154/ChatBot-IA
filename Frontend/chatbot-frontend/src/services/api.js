@@ -1,5 +1,6 @@
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8000'
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, '')
+const runtimeOrigin = typeof window !== 'undefined' ? window.location.origin : ''
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || runtimeOrigin || DEFAULT_BASE_URL).replace(/\/$/, '')
 
 async function request(path, { method = 'GET', body, token, headers = {}, isForm = false } = {}) {
   const config = { method, headers: new Headers(headers) }
@@ -54,6 +55,44 @@ export function processSentence(token, text) {
 
 export function logoutUser(token) {
   return request('/logout', { method: 'POST', token })
+}
+
+export function fetchCategories() {
+  return request('/categories')
+}
+
+export function fetchPictograms() {
+  return request('/pictograms')
+}
+
+export function fetchAssignments(token) {
+  return request('/assignments', { token })
+}
+
+export function fetchAssignment(token, assignmentId) {
+  return request(`/assignment/${assignmentId}`, { token })
+}
+
+export function submitAssignmentResults(token, assignmentId, answers) {
+  return request('/assignment-results', {
+    method: 'POST',
+    token,
+    body: { assignment_id: assignmentId, answers }
+  })
+}
+
+export function startGuidedSession(token, words, meta = {}) {
+  const { assignment_id: assignmentId, title, task } = meta
+  return request('/start-guided-session', {
+    method: 'POST',
+    token,
+    body: { words, assignment_id: assignmentId, title, task }
+  })
+}
+
+export function fetchPictogram(path) {
+  // Helper to build pictogram URL
+  return `${API_BASE_URL}/pictogram/${path}`
 }
 
 export { API_BASE_URL }

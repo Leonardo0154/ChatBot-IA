@@ -50,18 +50,20 @@ def _get_frontend_index() -> Path | None:
 
 # CORS Middleware
 
+# CORS Middleware with configurable origins
+allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:8000,http://127.0.0.1:8000,http://localhost:5173,http://127.0.0.1:5173",
+).split(",")
+allowed_origins = [origin.strip() for origin in allowed_origins if origin.strip()]
+allow_credentials = all(origin != "*" for origin in allowed_origins)
+
 app.add_middleware(
-
     CORSMiddleware,
-
-    allow_origins=["*"],
-
-    allow_credentials=True,
-
+    allow_origins=allowed_origins or ["*"],
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
-
     allow_headers=["*"],
-
 )
 
 

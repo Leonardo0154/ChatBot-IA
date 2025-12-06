@@ -1,0 +1,12 @@
+{
+  "labels":[
+    "triste",
+    "ansioso",
+    "enojado",
+    "orgulloso",
+    "calmo",
+    "neutral"
+  ],
+  "threshold":0.0,
+  "positive_label":null
+}

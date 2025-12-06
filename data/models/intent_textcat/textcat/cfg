@@ -1,0 +1,16 @@
+{
+  "labels":[
+    "rutina_escolar",
+    "terapia_habla",
+    "juego_cooperativo",
+    "autonomia_diaria",
+    "factual_pregunta",
+    "emocional_checkin",
+    "juego_pista",
+    "concepto_relacionado",
+    "consentimiento",
+    "otra_consulta"
+  ],
+  "threshold":0.0,
+  "positive_label":null
+}

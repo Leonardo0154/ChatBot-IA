@@ -1,6 +1,7 @@
 import random
 from pathlib import Path
 from typing import Dict, Tuple
+import shutil
 
 import spacy
 from spacy.training import Example
@@ -28,7 +29,8 @@ _emotion_nlp = None
 
 def _train_model() -> spacy.language.Language:
     nlp = spacy.blank('es')
-    textcat = nlp.add_pipe('textcat', config={'exclusive_classes': True, 'architecture': 'simple_cnn'})
+    # Use default textcat config compatible with installed spaCy
+    textcat = nlp.add_pipe('textcat')
     for label in EMOTIONS:
         textcat.add_label(label)
 
@@ -55,7 +57,7 @@ def _load_or_train() -> spacy.language.Language:
         try:
             return spacy.load(MODEL_DIR)
         except Exception:
-            pass
+            shutil.rmtree(MODEL_DIR, ignore_errors=True)
     return _train_model()
 
 

@@ -18,15 +18,19 @@
 
       <!-- Botones -->
       <div class="sidebar-menu">
-        <button class="menu-btn" @click="newChat"><img class="icon-img" src="/src/assets/Add_Square.png"/>Nuevo chat</button>
-        <button class="menu-btn" @click="mode = 'boty'"><img class="icon-img" src="/src/assets/robot_icon.png"/>Hablar con boty</button>
-        <button class="menu-btn"><img class="icon-img" src="/src/assets/Edit.png"/>Aprender a escribir</button>
-        <button class="menu-btn"><img class="icon-img" src="/src/assets/Book_duotone.png"/>Cuentos cortos</button>
-        <button class="menu-btn"><img class="icon-img" src="/src/assets/historial_icon.png"/>Historial</button>
+        <button class="menu-btn" @click="newChat"><img class="icon-img" :src="icons.add" />Nuevo chat</button>
+        <router-link
+          v-for="item in menuItems"
+          :key="item.to"
+          class="menu-btn"
+          :to="item.to"
+        >
+          <img class="icon-img" :src="item.icon" />{{ item.label }}
+        </router-link>
       </div>
 
       <!-- Robot abajo -->
-      <img class="robot-img" src="/src/assets/robot_dancing.gif" />
+      <img class="robot-img" :src="icons.robot" />
     </aside>
 
     <!-- MAIN -->
@@ -38,75 +42,103 @@
 
         <div class="topbar-actions">
           <button class="logout-btn" @click="logout">Salir</button>
-          <button class="upgrade-btn">Upgrade</button>
-
-          <button class="circle-btn">
-            <img src="../assets/Ajustes_icon.png" />
-          </button>
-
-          <button class="circle-btn">
-            <img src="../assets/notificacion_icon.png" />
-          </button>
         </div>
       </header>
 
       <div class="chat-box">
 
-        <!-- MODO CHAT -->
-        <section v-if="mode === 'chat'" class="chat-mode">
+        <!-- Chat -->
+        <section class="chat-mode chat-columns">
 
-          <!-- WELCOME -->
-          <section class="welcome" v-if="chat.length === 0">
-            <img class="welcome-img" src="/src/assets/14.png" />
-            <h1>¡Bienvenido!</h1>
-            <p>Empieza por crear un script para la tarea y deja que el chat siga el resto.</p>
-          </section>
+          <div class="chat-pane">
+            <!-- WELCOME -->
+            <section class="welcome" v-if="chat.length === 0">
+              <img class="welcome-img" :src="icons.welcome" />
+              <h1>¡Bienvenido!</h1>
+              <p>Empieza por crear un script para la tarea y deja que el chat siga el resto.</p>
+            </section>
 
-          <!-- MENSAJES -->
-          <div class="messages" ref="messages">
-            <transition-group name="fade" tag="div">
-              <div
-                v-for="(msg, i) in chat"
-                :key="i"
-                :class="['bubble', msg.from]"
-              >
-                {{ msg.text }}
+            <!-- MENSAJES -->
+            <div class="messages" ref="messages">
+              <transition-group name="fade" tag="div">
+                <div
+                  v-for="(msg, i) in chat"
+                  :key="i"
+                  :class="['bubble', msg.from]"
+                >
+                  <div>{{ msg.text }}</div>
+                  <div v-if="msg.pictograms && msg.pictograms.length" class="pictogram-row">
+                    <img
+                      v-for="(pic, idx) in msg.pictograms"
+                      :key="idx"
+                      :src="buildPictogramUrl(pic.pictogram || pic.path || pic)"
+                      :alt="pic.word || 'pictogram'"
+                    />
+                  </div>
+                </div>
+              </transition-group>
+            </div>
+
+            <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
+
+            <!-- INPUT CHAT -->
+            <div class="chat-input">
+              <input
+                v-model="message"
+                type="text"
+                placeholder="Escribe tu mensaje..."
+                @keyup.enter="sendMessage"
+              />
+
+              <div class="chat-icons">
+                <button
+                  class="icon-btn"
+                  :class="{ active: listening }"
+                  :disabled="!speechSupported"
+                  @click="toggleMic"
+                  :title="speechSupported ? 'Hablar' : 'Mic no soportado'"
+                >
+                  <img :src="icons.mic" />
+                </button>
+
+                <button class="send-btn" @click="sendMessage" :disabled="loadingResponse">
+                  <img :src="icons.send" />
+                </button>
               </div>
-            </transition-group>
-          </div>
-
-          <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
-
-          <!-- INPUT CHAT -->
-          <div class="chat-input">
-            <input
-              v-model="message"
-              type="text"
-              placeholder="Write your message ..."
-              @keyup.enter="sendMessage"
-            />
-
-            <div class="chat-icons">
-              <button class="icon-btn">
-                <img src="../assets/image_icon.png" />
-              </button>
-
-              <button class="icon-btn">
-                <img src="../assets/micro_icon.png" />
-              </button>
-
-              <button class="send-btn" @click="sendMessage" :disabled="loadingResponse">
-                <img src="../assets/sent.png" />
-              </button>
             </div>
           </div>
 
+          <aside class="side-panel">
+            <div class="panel-block">
+              <h3>Categorías</h3>
+              <select v-model="selectedCategory">
+                <option value="">Todas</option>
+                <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+              </select>
+            </div>
+
+            <div class="panel-block pictogram-gallery">
+              <div class="panel-header">
+                <h3>Galería de pictogramas</h3>
+                <span v-if="galleryLoading">Cargando...</span>
+              </div>
+              <div class="pictogram-grid">
+                <button
+                  v-for="(p, idx) in filteredPictograms"
+                  :key="idx"
+                  class="pictogram-card"
+                  @click="appendWord(p)"
+                  :title="p.keywords?.[0]?.keyword || 'pictograma'"
+                >
+                  <img :src="buildPictogramUrl(p.path)" :alt="p.keywords?.[0]?.keyword || 'pictogram'" />
+                  <small>{{ p.keywords?.[0]?.keyword }}</small>
+                </button>
+              </div>
+            </div>
+          </aside>
+
         </section>
 
-        <!-- MODO BOTY -->
-        <section v-if="mode === 'boty'" class="boty-mode">
-          <BotyVoice @exitBoty="mode = 'chat'" />
-        </section>
       </div>
     </main>
   </div>
@@ -114,9 +146,16 @@
 
 
 <script>
-import BotyVoice from "./BotyVoice.vue";
-import { processSentence, logoutUser } from "@/services/api";
+import { processSentence, logoutUser, fetchCategories, fetchPictograms, fetchPictogram } from "@/services/api";
 import { getSession, clearSession } from "@/services/session";
+import addIcon from "@/assets/Add_Square.png";
+import assignmentsIcon from "@/assets/historial_icon.png";
+import memoryIcon from "@/assets/Book_duotone.png";
+import guidedIcon from "@/assets/Edit.png";
+import robotIcon from "@/assets/robot_dancing.gif";
+import micIcon from "@/assets/micro_icon.png";
+import sendIcon from "@/assets/sent.png";
+import welcomeIcon from "@/assets/14.png";
 
 const ROLE_LABELS = {
   child: "Estudiante / Niño",
@@ -127,7 +166,6 @@ const ROLE_LABELS = {
 
 export default {
   name: "ChatBotView",
-  components: { BotyVoice },
   data() {
     return {
       message: "",
@@ -135,15 +173,51 @@ export default {
       user: null,
       token: null,
       currentChatId: null,
-      mode: "chat",
       loadingResponse: false,
-      errorMessage: ""
+      errorMessage: "",
+      categories: [],
+      pictograms: [],
+      galleryLoading: false,
+      selectedCategory: "",
+      speechSupported: false,
+      listening: false,
+      recognition: null,
+      icons: {
+        add: addIcon,
+        assignments: assignmentsIcon,
+        memory: memoryIcon,
+        guided: guidedIcon,
+        robot: robotIcon,
+        mic: micIcon,
+        send: sendIcon,
+        welcome: welcomeIcon
+      }
     };
   },
   computed: {
     roleLabel() {
       if (!this.user?.role) return "Sin rol asignado";
       return ROLE_LABELS[this.user.role] || this.user.role;
+    },
+    menuItems() {
+      const role = this.user?.role;
+      const items = [];
+      items.push({ to: "/assignments", label: "Asignaciones", icon: this.icons.assignments });
+      if (role === "child" || role === "student") {
+        items.push({ to: "/memory-game", label: "Juego de memoria", icon: this.icons.memory });
+        items.push({ to: "/guided-session", label: "Sesión guiada", icon: this.icons.guided });
+      }
+      if (role === "teacher" || role === "therapist" || role === "parent") {
+        items.push({ to: "/guided-session", label: "Sesión guiada", icon: this.icons.guided });
+      }
+      return items;
+    },
+    filteredPictograms() {
+      const maxItems = 80;
+      if (!this.selectedCategory) return this.pictograms.slice(0, maxItems);
+      return this.pictograms
+        .filter(p => (p.tags || p.keywords?.map(k => k.keyword)).some(tag => tag === this.selectedCategory))
+        .slice(0, maxItems);
     }
   },
   created() {
@@ -154,14 +228,17 @@ export default {
     }
     this.user = session.user;
     this.token = session.token;
+    this.loadCategories();
+    this.loadPictograms();
+    this.initSpeech();
   },
   methods: {
     async sendMessage() {
-      if (!this.message.trim() || this.loadingResponse) return;
       if (!this.token) {
         this.handleAuthExpiration();
         return;
       }
+      if (!this.message.trim() || this.loadingResponse) return;
 
       const userText = this.message.trim();
       this.chat.push({ text: userText, from: "user" });
@@ -222,6 +299,72 @@ export default {
     newChat() {
       this.chat = [];
       this.currentChatId = Date.now();
+    },
+    async loadCategories() {
+      try {
+        this.categories = await fetchCategories();
+      } catch (error) {
+        console.error("No se pudieron cargar las categorías", error);
+      }
+    },
+    async loadPictograms() {
+      this.galleryLoading = true;
+      try {
+        this.pictograms = await fetchPictograms();
+      } catch (error) {
+        console.error("No se pudo cargar la galería", error);
+      } finally {
+        this.galleryLoading = false;
+      }
+    },
+    appendWord(pictogram) {
+      const keyword = pictogram?.keywords?.[0]?.keyword;
+      if (keyword) {
+        this.message = `${this.message} ${keyword}`.trim();
+      }
+    },
+    appendSuggestedWord() {
+      const first = this.filteredPictograms[0];
+      if (first) this.appendWord(first);
+    },
+    buildPictogramUrl(path) {
+      if (!path) return "";
+      return fetchPictogram(path);
+    },
+    initSpeech() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        this.speechSupported = false;
+        return;
+      }
+      this.speechSupported = true;
+      this.recognition = new SpeechRecognition();
+      this.recognition.lang = "es-ES";
+      this.recognition.interimResults = false;
+      this.recognition.maxAlternatives = 1;
+
+      this.recognition.onstart = () => {
+        this.listening = true;
+      };
+      this.recognition.onend = () => {
+        this.listening = false;
+      };
+      this.recognition.onresult = (event) => {
+        const speechResult = event.results[0][0].transcript;
+        this.message = speechResult;
+        this.sendMessage();
+      };
+      this.recognition.onerror = () => {
+        this.listening = false;
+      };
+    },
+    toggleMic() {
+      if (!this.recognition) return;
+      if (this.listening) {
+        this.recognition.stop();
+      } else {
+        this.recognition.start();
+      }
     }
   }
 };
@@ -308,6 +451,7 @@ export default {
   display: flex;
   gap: 10px;
   align-items: center;
+  text-decoration: none;
 }
 
 .menu-btn:hover {
@@ -514,6 +658,18 @@ export default {
   display: flex;
 }
 
+.chat-columns {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+}
+
+.chat-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
 /* burbujas */
 .bubble {
   align-self: flex-start;   
@@ -575,6 +731,11 @@ export default {
   transform: scale(1.05);
 }
 
+.icon-btn.active {
+  background: #00c8b3;
+  color: #fff;
+}
+
 /* Botón de enviar */
 .send-btn {
   width: 40px;
@@ -599,6 +760,90 @@ export default {
 .send-btn:hover {
   background: #00b8a5;
   transform: scale(1.07);
+}
+
+.side-panel {
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 720px;
+  overflow: hidden;
+}
+
+.panel-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.panel-block select {
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid #dcdcdc;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pictogram-gallery {
+  flex: 1;
+  overflow: hidden;
+}
+
+.pictogram-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+  max-height: 600px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.pictogram-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: #f7f8fc;
+  border: 1px solid #e5e5e5;
+  border-radius: 10px;
+  padding: 6px;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pictogram-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.pictogram-card img {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+}
+
+.pictogram-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.pictogram-row img {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #eee;
+  padding: 4px;
 }
 .exit-button {
   margin-top: 20px;
