@@ -3,13 +3,14 @@
     <header class="page-header">
       <div>
         <h1>Sesión guiada</h1>
-        <p class="sub">Envía palabras objetivo para que el bot prepare la sesión.</p>
+        <p class="sub">Crea un set de palabras y el asistente guiará la práctica paso a paso.</p>
       </div>
-      <router-link class="btn" to="/chat">Volver al chat</router-link>
+      <router-link class="btn" to="/teacher-dashboard">Panel docente</router-link>
     </header>
 
     <section class="card">
       <div v-if="!session?.token" class="status">Debes iniciar sesión.</div>
+      <div v-else-if="!canCreate" class="status">Solo docentes o terapeutas pueden crear sesiones guiadas.</div>
       <form v-else @submit.prevent="startSession" class="form">
         <label>Título</label>
         <input v-model="title" type="text" placeholder="Sesión sobre animales" />
@@ -19,6 +20,10 @@
 
         <label>Palabras (separadas por coma)</label>
         <input v-model="wordsRaw" type="text" placeholder="ballena, tiburón, pez" />
+
+        <div class="presets">
+          <span class="preset" v-for="preset in presets" :key="preset.label" @click="applyPreset(preset)">{{ preset.label }}</span>
+        </div>
 
         <button class="btn" type="submit" :disabled="loading">{{ loading ? 'Enviando...' : 'Iniciar sesión' }}</button>
         <div class="status" v-if="statusMessage" :class="{ success: statusOk, error: !statusOk }">{{ statusMessage }}</div>
@@ -41,7 +46,12 @@ export default {
       wordsRaw: '',
       loading: false,
       statusMessage: '',
-      statusOk: false
+      statusOk: false,
+      presets: [
+        { label: 'Animales marinos', words: ['ballena', 'tiburon', 'pez'] },
+        { label: 'Rutina de la mañana', words: ['despertar', 'lavar', 'desayuno'] },
+        { label: 'Emociones básicas', words: ['feliz', 'triste', 'enojado'] }
+      ]
     }
   },
   created() {
@@ -50,9 +60,21 @@ export default {
       this.$router.replace({ name: 'login', query: { redirect: '/guided-session' } })
     }
   },
+  computed: {
+    canCreate() {
+      const role = this.session?.user?.role
+      return role === 'teacher' || role === 'therapist'
+    }
+  },
   methods: {
+    applyPreset(preset) {
+      this.wordsRaw = preset.words.join(', ')
+      this.title = preset.label
+      this.task = `Practicar ${preset.label.toLowerCase()}`
+    },
     async startSession() {
       if (!this.session?.token) return
+      if (!this.canCreate) return
       const words = this.wordsRaw
         .split(',')
         .map((w) => w.trim())

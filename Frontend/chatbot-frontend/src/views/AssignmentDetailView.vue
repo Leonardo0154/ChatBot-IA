@@ -19,11 +19,24 @@
         <p class="meta">Autor: {{ assignment.author }} · {{ formatDate(assignment.timestamp) }}</p>
         <p class="meta">Palabras: {{ assignment.words?.length || 0 }}</p>
 
+        <div v-if="assignment.type === 'guided_session'" class="status info">
+          Esta es una sesión guiada. Se inicia en segundo plano para que el asistente conduzca la práctica en el chat.
+        </div>
+
         <div v-if="!canAnswer" class="status">Vista solo lectura para tu rol.</div>
 
         <div v-else>
           <div v-if="!completed" class="interactive">
-            <p>Palabra {{ currentWordIndex + 1 }} de {{ assignment.words.length }}: <strong>{{ currentWord }}</strong></p>
+            <p>Palabra {{ currentWordIndex + 1 }} de {{ assignment.words.length }}</p>
+
+            <div class="pictogram-preview" v-if="currentPictogram">
+              <img :src="currentPictogramUrl" :alt="currentWord" />
+              <small>{{ pictogramKeyword }}</small>
+            </div>
+            <div class="pictogram-preview missing" v-else>
+              <p>No se encontró pictograma para esta palabra.</p>
+            </div>
+
             <input v-model="currentAnswer" type="text" placeholder="Escribe la palabra" @keyup.enter="submitAnswer" />
             <button class="btn" @click="submitAnswer">Responder</button>
             <div class="status" v-if="feedback" :class="{ success: feedback?.ok, error: !feedback?.ok }">{{ feedback.message }}</div>
@@ -37,7 +50,7 @@
 </template>
 
 <script>
-import { fetchAssignment, submitAssignmentResults, startGuidedSession } from '@/services/api'
+import { fetchAssignment, submitAssignmentResults, startGuidedSession, fetchPictograms, fetchPictogram } from '@/services/api'
 import { getSession } from '@/services/session'
 
 const ROLE_STUDENT = ['student', 'child']
@@ -54,7 +67,8 @@ export default {
       answers: [],
       currentAnswer: '',
       feedback: null,
-      completed: false
+      completed: false,
+      pictograms: []
     }
   },
   computed: {
@@ -63,6 +77,27 @@ export default {
     },
     currentWord() {
       return this.assignment?.words?.[this.currentWordIndex] || ''
+    },
+    currentPictogram() {
+      if (!this.currentWord || !this.pictograms.length) return null
+      const target = this.currentWord.toLowerCase()
+      const plain = target.normalize('NFD').replace(/\p{Diacritic}/gu, '')
+      const match = this.pictograms.find((p) =>
+        (p.keywords || []).some((k) => {
+          const kw = (k.keyword || '').toLowerCase()
+          const kwPlain = kw.normalize('NFD').replace(/\p{Diacritic}/gu, '')
+          return kw === target || kwPlain === plain
+        })
+      )
+      return match || null
+    },
+    currentPictogramUrl() {
+      if (!this.currentPictogram?.path) return ''
+      return fetchPictogram(this.currentPictogram.path)
+    },
+    pictogramKeyword() {
+      if (!this.currentPictogram) return ''
+      return this.currentPictogram.keywords?.[0]?.keyword || this.currentWord
     }
   },
   async created() {
@@ -71,7 +106,7 @@ export default {
       this.$router.replace({ name: 'login', query: { redirect: this.$route.fullPath } })
       return
     }
-    await this.loadAssignment()
+    await Promise.all([this.loadAssignment(), this.loadPictograms()])
     if (this.assignment?.type === 'guided_session') {
       this.startGuided()
     }
@@ -89,18 +124,27 @@ export default {
         this.loading = false
       }
     },
+    async loadPictograms() {
+      try {
+        this.pictograms = await fetchPictograms()
+      } catch (err) {
+        console.error('No se pudieron cargar los pictogramas', err)
+      }
+    },
     async submitAnswer() {
       if (!this.canAnswer || !this.currentAnswer || this.completed) return
       const expected = this.currentWord.toLowerCase()
       const answer = this.currentAnswer.trim()
       const ok = answer.toLowerCase() === expected
       this.answers.push({ word: this.currentWord, answer })
-      this.feedback = { ok, message: ok ? '¡Correcto!' : `Incorrecto. La respuesta era ${expected}` }
-      this.currentAnswer = ''
-      this.currentWordIndex++
-      if (this.currentWordIndex >= this.assignment.words.length) {
-        this.currentWordIndex = this.assignment.words.length - 1
-        await this.finish()
+      this.feedback = { ok, message: ok ? '¡Correcto!' : 'Incorrecto. Intenta de nuevo.' }
+      if (ok) {
+        this.currentAnswer = ''
+        this.currentWordIndex++
+        if (this.currentWordIndex >= this.assignment.words.length) {
+          this.currentWordIndex = this.assignment.words.length - 1
+          await this.finish()
+        }
       }
     },
     async finish() {
@@ -197,5 +241,32 @@ input[type="text"] {
 
 .status.success {
   color: #0c8b65;
+}
+
+.status.info {
+  color: #0b6ba8;
+}
+
+.pictogram-preview {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #e6e8f0;
+  border-radius: 12px;
+  background: #fafbff;
+}
+
+.pictogram-preview img {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+}
+
+.pictogram-preview.missing {
+  background: #fff8f2;
+  border-color: #ffd6a5;
+  color: #b36b00;
 }
 </style>

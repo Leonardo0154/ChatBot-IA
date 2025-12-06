@@ -318,6 +318,30 @@ def save_assignment_result(username, result_data):
         json.dump(results, f, ensure_ascii=False, indent=4)
 
 
+def delete_assignment(assignment_id: str, author: str) -> bool:
+    """Delete an assignment if it belongs to author; also remove its results."""
+    assignments = get_assignments()
+    remaining = [a for a in assignments if not (a.get('timestamp') == assignment_id and a.get('author') == author)]
+    if len(remaining) == len(assignments):
+        return False
+    with open(ASSIGNMENTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(remaining, f, ensure_ascii=False, indent=4)
+
+    # Remove related results
+    results = get_assignment_results()
+    filtered_results = [r for r in results if r.get('assignment_id') != assignment_id]
+    with open(ASSIGNMENT_RESULTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(filtered_results, f, ensure_ascii=False, indent=4)
+    return True
+
+
+def get_assignment_results_for_author(author: str):
+    """Return results for assignments created by the given author."""
+    assignments = {a.get('timestamp'): a for a in get_assignments() if a.get('author') == author}
+    results = get_assignment_results()
+    return [r for r in results if r.get('assignment_id') in assignments]
+
+
 def load_support_content():
     """Loads curated therapist/teacher support content."""
     support_data = copy.deepcopy(DEFAULT_SUPPORT_CONTENT)
@@ -381,6 +405,30 @@ def get_user_progress_summary(username):
         'most_common_words': most_common,
         'last_interaction': last_interaction
     }
+
+
+def get_usage_logs_for_users(usernames, limit=50):
+    """Return recent logs for a list of usernames (most recent last)."""
+    if not os.path.exists(LOG_FILE):
+        return []
+    results = []
+    with open(LOG_FILE, 'r', encoding='utf-8') as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                log = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if log.get('username') in usernames:
+                results.append(log)
+    return results[-limit:]
+
+
+def get_assignment_results_for_users(usernames):
+    """Return assignment results filtered by usernames."""
+    results = get_assignment_results()
+    return [r for r in results if r.get('username') in usernames]
 
 if __name__ == '__main__':
     # Example usage

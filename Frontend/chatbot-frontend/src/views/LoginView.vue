@@ -93,7 +93,8 @@ export default {
         const tokenResponse = await loginRequest(username, this.password);
         const user = await fetchProfile(tokenResponse.access_token);
         saveSession({ token: tokenResponse.access_token, user });
-        const redirect = this.$route.query.redirect || "/chat";
+        const role = user?.role;
+        const redirect = this.$route.query.redirect || (role === 'parent' ? '/parent-summary' : (role === 'teacher' || role === 'therapist') ? '/teacher-dashboard' : '/chat');
         this.$router.push(redirect);
       } catch (error) {
         this.errorMessage = error?.message || "No se pudo iniciar sesión.";

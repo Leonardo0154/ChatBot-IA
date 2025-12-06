@@ -3,7 +3,9 @@
     <header class="page-header">
       <h1>Asignaciones</h1>
       <div class="actions">
-        <router-link class="btn" to="/chat">Volver al chat</router-link>
+        <router-link v-if="isStudent" class="btn" to="/chat">Volver al chat</router-link>
+        <router-link v-else-if="isParent" class="btn" to="/parent-summary">Volver</router-link>
+        <router-link v-else class="btn" to="/teacher-dashboard">Panel docente</router-link>
       </div>
     </header>
 
@@ -51,6 +53,9 @@ export default {
   computed: {
     isStudent() {
       return ROLE_STUDENT.includes(this.session?.user?.role)
+    },
+    isParent() {
+      return this.session?.user?.role === 'parent'
     },
     visibleAssignments() {
       if (!this.assignments.length) return []

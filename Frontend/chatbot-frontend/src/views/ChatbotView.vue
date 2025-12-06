@@ -205,7 +205,6 @@ export default {
       items.push({ to: "/assignments", label: "Asignaciones", icon: this.icons.assignments });
       if (role === "child" || role === "student") {
         items.push({ to: "/memory-game", label: "Juego de memoria", icon: this.icons.memory });
-        items.push({ to: "/guided-session", label: "Sesión guiada", icon: this.icons.guided });
       }
       if (role === "teacher" || role === "therapist" || role === "parent") {
         items.push({ to: "/guided-session", label: "Sesión guiada", icon: this.icons.guided });
@@ -224,6 +223,10 @@ export default {
     const session = getSession();
     if (!session) {
       this.$router.push("/login");
+      return;
+    }
+    if (!['child', 'student'].includes(session.user?.role)) {
+      this.$router.push({ path: '/' });
       return;
     }
     this.user = session.user;

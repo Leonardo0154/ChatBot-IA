@@ -16,12 +16,12 @@
           <div
             v-for="card in cards"
             :key="card.id"
-            class="card"
+            class="mem-card"
             :class="{ flipped: card.flipped || card.matched }"
             @click="onCardClick(card)"
           >
-            <div class="front">?</div>
-            <div class="back">
+            <div class="face front">?</div>
+            <div class="face back">
               <img :src="card.url" :alt="card.keyword" />
             </div>
           </div>
@@ -129,46 +129,44 @@ export default {
   gap: 12px;
 }
 
-.card .card {
+.mem-card {
   border: 1px solid #e6e8f0;
   border-radius: 10px;
-  padding: 10px;
   height: 140px;
   position: relative;
   cursor: pointer;
   transform-style: preserve-3d;
-  transition: transform 0.3s ease;
+  transition: transform 0.4s ease;
+  background: transparent;
 }
 
-.card.flipped .front,
-.card .card .back {
-  backface-visibility: hidden;
+.mem-card.flipped {
+  transform: rotateY(180deg);
 }
 
-.card .card .front {
+.mem-card .face {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32px;
+  backface-visibility: hidden;
+  border-radius: 10px;
+}
+
+.mem-card .front {
   background: #0a0c19;
   color: #00c8b3;
-  border-radius: 10px;
+  font-size: 32px;
 }
 
-.card .card .back {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.mem-card .back {
   background: #fff;
-  border-radius: 10px;
   border: 1px solid #d7d9e4;
+  transform: rotateY(180deg);
 }
 
-.card .card img {
+.mem-card img {
   max-width: 80px;
   max-height: 80px;
 }

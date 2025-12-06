@@ -402,6 +402,9 @@ async def create_note(note: Note, current_user: schemas.User = Depends(auth.get_
 
 async def create_assignment(assignment: Assignment, current_user: schemas.User = Depends(auth.get_current_active_user)):
 
+    if current_user.role not in ["teacher", "therapist"]:
+        raise HTTPException(status_code=403, detail="Solo docentes o terapeutas pueden crear asignaciones.")
+
     data_manager.save_assignment(current_user.username, assignment.dict())
 
     return {"message": "Assignment saved successfully."}
@@ -431,6 +434,44 @@ async def get_assignment(assignment_id: str, current_user: schemas.User = Depend
     return {"error": "Assignment not found"}
 
 
+@app.delete("/assignment/{assignment_id}")
+async def delete_assignment(assignment_id: str, current_user: schemas.User = Depends(auth.get_current_active_user)):
+    if current_user.role not in ["teacher", "therapist"]:
+        raise HTTPException(status_code=403, detail="Solo docentes o terapeutas pueden eliminar asignaciones.")
+
+    deleted = data_manager.delete_assignment(assignment_id, current_user.username)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Asignación no encontrada o sin permisos para eliminarla.")
+    return {"message": "Assignment deleted successfully."}
+
+
+@app.get("/family-summary")
+async def family_summary(current_user: schemas.User = Depends(auth.get_current_active_user)):
+    if current_user.role != "parent":
+        raise HTTPException(status_code=403, detail="Solo padres/tutores pueden ver el resumen familiar")
+
+    students = current_user.students or []
+    logs = data_manager.get_usage_logs_for_users(students, limit=100)
+    results = data_manager.get_assignment_results_for_users(students)
+
+    summary = []
+    for student in students:
+        student_logs = [l for l in logs if l.get('username') == student]
+        student_results = [r for r in results if r.get('username') == student]
+        last_log = max((l.get('timestamp') for l in student_logs), default=None)
+        last_result = max((r.get('timestamp') for r in student_results), default=None)
+        summary.append({
+            "student": student,
+            "total_interactions": len(student_logs),
+            "last_interaction": last_log,
+            "assignments_completed": len(student_results),
+            "last_assignment": last_result,
+            "recent_messages": student_logs[-5:] if student_logs else []
+        })
+
+    return {"students": summary}
+
+
 
 @app.post("/assignment-results")
 
@@ -451,6 +492,24 @@ async def create_assignment_result(result: AssignmentResult, current_user: schem
     data_manager.save_assignment_result(current_user.username, result.model_dump())
 
     return {"message": "Assignment results saved successfully."}
+
+
+@app.get("/assignment-results")
+async def list_assignment_results(current_user: schemas.User = Depends(auth.get_current_active_user)):
+    # Teachers/therapists see results for their assignments; parents see their students; students see their own.
+    if current_user.role in ["teacher", "therapist"]:
+        return data_manager.get_assignment_results_for_author(current_user.username)
+
+    if current_user.role == "parent":
+        students = current_user.students or []
+        results = data_manager.get_assignment_results()
+        return [r for r in results if r.get('username') in students]
+
+    if current_user.role in ["student", "child"]:
+        results = data_manager.get_assignment_results()
+        return [r for r in results if r.get('username') == current_user.username]
+
+    return []
 
 
 

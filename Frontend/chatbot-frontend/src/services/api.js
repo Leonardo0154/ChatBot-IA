@@ -69,8 +69,16 @@ export function fetchAssignments(token) {
   return request('/assignments', { token })
 }
 
+export function createAssignment(token, payload) {
+  return request('/assignments', { method: 'POST', token, body: payload })
+}
+
 export function fetchAssignment(token, assignmentId) {
   return request(`/assignment/${assignmentId}`, { token })
+}
+
+export function deleteAssignment(token, assignmentId) {
+  return request(`/assignment/${assignmentId}`, { method: 'DELETE', token })
 }
 
 export function submitAssignmentResults(token, assignmentId, answers) {
@@ -79,6 +87,10 @@ export function submitAssignmentResults(token, assignmentId, answers) {
     token,
     body: { assignment_id: assignmentId, answers }
   })
+}
+
+export function fetchAssignmentResults(token) {
+  return request('/assignment-results', { token })
 }
 
 export function startGuidedSession(token, words, meta = {}) {
@@ -93,6 +105,10 @@ export function startGuidedSession(token, words, meta = {}) {
 export function fetchPictogram(path) {
   // Helper to build pictogram URL
   return `${API_BASE_URL}/pictogram/${path}`
+}
+
+export function fetchFamilySummary(token) {
+  return request('/family-summary', { token })
 }
 
 export { API_BASE_URL }
